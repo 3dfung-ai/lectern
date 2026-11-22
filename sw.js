@@ -1,9 +1,10 @@
 /* Lectern offline cache: the app opens with no internet; your talks live in the browser's database. */
-const CACHE = 'lectern-eced849d';
+const CACHE = 'lectern-01b7366a';
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './vendor/jszip.min.js', './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs', './vendor/serif.woff2', './vendor/serif-italic.woff2',
   './tts-worker.js', './mp3-worker.js', './vendor/lamejs.iife.js', './vendor/kokoro.web.js', './lectern-sync.gs'];
-self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
+// cache: 'reload' skips the browser's own HTTP cache, so an update never stores yesterday's files
+self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('lectern-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
@@ -18,7 +19,7 @@ self.addEventListener('fetch', e => {
   }
   if (u.origin !== self.location.origin) return;
   if (r.mode === 'navigate' || u.pathname.endsWith('/') || u.pathname.endsWith('.html') || u.pathname.endsWith('/app.js')) {
-    e.respondWith(withTimeout(fetch(r), 4000)
+    e.respondWith(withTimeout(fetch(r.url, { cache: 'no-cache', credentials: 'same-origin' }), 4000)
       .then(res => { if (res.ok) { const cp = res.clone(); caches.open(CACHE).then(c => c.put(r.mode === 'navigate' ? './index.html' : r, cp)); } return res; })
       .catch(() => caches.match(r.mode === 'navigate' ? './index.html' : r).then(m => m || caches.match('./index.html'))));
     return;
