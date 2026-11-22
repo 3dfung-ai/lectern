@@ -526,7 +526,7 @@ function slideImage(v, n, full, cls) {
   kept by a small Apps Script in your account that answers only requests carrying your key.
   Files (the .pptx, slide pictures, MP3s) travel separately, 3 MB at a time, in the background.
 */
-const Sync = { busy: false, again: false, timer: 0, err: null, detail: '', fails: 0, scanAt: 0, qBusy: false, qErr: null, qNow: null };
+const Sync = { yielded: false, busy: false, again: false, timer: 0, err: null, detail: '', fails: 0, scanAt: 0, qBusy: false, qErr: null, qNow: null };
 const syncReady = () => !!(App.sync.url && App.sync.key);
 const validScriptUrl = url => /^https:\/\/script\.google(usercontent)?\.com\/.+\/exec$/.test(url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(url);
 function syncSoon(ms) { clearTimeout(Sync.timer); if (syncReady()) Sync.timer = setTimeout(() => syncNow(false), ms); }
@@ -596,6 +596,7 @@ async function applyRecord(id, data) {
 async function syncNow(manual) {
   const S = App.sync;
   if (!syncReady()) { updatePill(); if (manual) openSettings('sync'); return; }
+  if (Sync.yielded && !manual) { updatePill(); return; }
   if (Sync.busy) { Sync.again = true; return; }
   if (navigator.onLine === false) { Sync.err = 'offline'; updatePill(); if (manual) toast('You’re offline. Everything is saved on this device and will sync when you’re back online.'); return; }
   Sync.busy = true; updatePill();
@@ -735,10 +736,10 @@ function enqueue(job) {
   job.id = uid('j'); job.tries = 0; App.queue.push(job); saveKV('queue'); runQueue();
 }
 async function runQueue() {
-  if (Sync.qBusy || !App.queue.length || !syncReady() || navigator.onLine === false) { updatePill(); return; }
+  if (Sync.qBusy || Sync.yielded || !App.queue.length || !syncReady() || navigator.onLine === false) { updatePill(); return; }
   Sync.qBusy = true;
   try {
-    while (App.queue.length && navigator.onLine !== false) {
+    while (App.queue.length && navigator.onLine !== false && !Sync.yielded) {
       const job = App.queue.slice().sort((a, b) => jobRank(a) - jobRank(b))[0];
       Sync.qNow = job; updatePill(); renderTray();
       try {
@@ -895,6 +896,7 @@ function updatePill() {
   const q = App.queue.length, dirty = Object.keys(App.sync.dirty).length;
   if (!syncReady()) { txt = 'This device only'; cls = 'off'; }
   else if (navigator.onLine === false) { txt = 'Offline: saved here'; cls = 'warn'; }
+  else if (Sync.yielded) { txt = 'Paused: open in another tab'; cls = 'off'; }
   else if (Sync.busy) { txt = 'Syncing…'; cls = 'busy'; }
   else if (Sync.qNow) { txt = (JOB_LABEL[Sync.qNow.t] || 'Working') + (q > 1 ? ` (+${q - 1})` : ''); cls = 'busy'; }
   else if (Sync.err && !['offline'].includes(Sync.err)) { txt = Sync.err === 'bad_key' ? 'Sync key wrong' : 'Sync problem'; cls = 'warn'; }
@@ -902,7 +904,7 @@ function updatePill() {
   else if (dirty) { txt = 'Saving…'; cls = 'busy'; }
   else { txt = 'Synced with Drive'; cls = 'ok'; }
   p.className = 'pill ' + cls; p.querySelector('span').textContent = txt;
-  p.title = syncReady() ? (App.sync.lastSync ? 'Last synced ' + new Date(App.sync.lastSync).toLocaleTimeString() : 'Not synced yet') + '. Click to sync now.' : 'Set up Drive sync so your talks reach your other devices.';
+  p.title = Sync.yielded ? 'Lectern is open in another tab. Click to reload this one.' : syncReady() ? (App.sync.lastSync ? 'Last synced ' + new Date(App.sync.lastSync).toLocaleTimeString() : 'Not synced yet') + '. Click to sync now.' : 'Set up Drive sync so your talks reach your other devices.';
 }
 
 /* ---------- connecting a device ---------- */
@@ -941,17 +943,28 @@ async function applySync(url, key, dev) {
     for (const v of App.versions.values()) S.dirty['v:' + v.id] = 1;
     for (const k of await DB.keys('runs')) S.dirty['r:' + k] = 1;
     S.dirty['p:prefs'] = 1;
-    // files made before sync was on still need to reach Drive
-    for (const v of App.versions.values()) {
-      if (!v.origId && await DB.get('files', 'orig/' + v.id)) enqueue({ t: 'upOrig', verId: v.id });
-      if (v.picsId && !v.picsZipId && await hasPictures(v.picsId, 1)) enqueue({ t: 'upPics', verId: v.id, picsId: v.picsId });
-    }
   }
+  await healSync();
   await saveKV('sync');
   await loadPron();
   await syncNow(false);
   if (!Sync.err) toast(`Drive sync is on. ${plural(liveDecks().length, 'talk')} on this device.`);
   return true;
+}
+/* Self-repair, run at start and on connect: anything on this device that Drive has never seen gets sent,
+   and any .pptx or picture set not yet on Drive gets queued. Covers two tabs open at once and sync turned on late. */
+async function healSync() {
+  if (!syncReady()) return;
+  const S = App.sync; let n = 0;
+  const mark = id => { if (S.base[id] === undefined && !S.dirty[id]) { S.dirty[id] = 1; n++; } };
+  for (const d of App.decks.values()) mark('d:' + d.id);
+  for (const v of App.versions.values()) mark('v:' + v.id);
+  for (const k of await DB.keys('runs')) mark('r:' + k);
+  for (const v of App.versions.values()) {
+    if (!v.origId && await DB.get('files', 'orig/' + v.id)) enqueue({ t: 'upOrig', verId: v.id });
+    if (v.picsId && !v.picsZipId && await hasPictures(v.picsId, 1)) enqueue({ t: 'upPics', verId: v.id, picsId: v.picsId });
+  }
+  if (n) { await saveKV('sync'); syncSoon(1500); }
 }
 function guessDevice() {
   const ua = navigator.userAgent;
@@ -2008,7 +2021,11 @@ async function makeTalkMp3(d) {
   Voice.stop();
   Mp3.running = true; Mp3.cancel = false;
   const tid = uid('t'); const started = Date.now();
-  trayItem(tid, { title: `MP3: ${d.title}`, step: 'Starting', p: 0 });
+  // Kokoro runs about 3.5x faster than speech on a laptop GPU, about 1.2x without one
+  const listenMin = slides.reduce((a, s) => a + wordsOf(noteText(d, s.n)), 0) / (App.prefs.wpm || 140);
+  const makeMs = listenMin * 60000 / (Voice.device === 'webgpu' ? 3.5 : 1.2);
+  toast(`Making the talk MP3 takes about ${fmtMin(Math.max(1, makeMs / 60000))} on this computer. Keep this tab open; you can carry on working.`, { ms: 9000 });
+  trayItem(tid, { title: `MP3: ${d.title}`, step: `Starting, about ${fmtMin(Math.max(1, makeMs / 60000))}`, p: 0 });
   const enc = new Worker('mp3-worker.js');
   const parts = []; const chapters = []; let samples = 0, sr = 24000;
   enc.onmessage = e => { if (e.data.type === 'data') parts.push(e.data.buf); };
@@ -2535,6 +2552,28 @@ window.addEventListener('message', async e => {
   }
 });
 
+/* ============ two tabs open at once ============ */
+// Both tabs share one store. The newest tab does the syncing; an older one pauses its syncing,
+// says so, and offers a reload, so two tabs never upload the same files or work from stale copies.
+function watchOtherTabs() {
+  if (!('BroadcastChannel' in window)) return;
+  const ch = new BroadcastChannel('lectern-tabs'), me = uid('t');
+  ch.onmessage = e => {
+    const m = e.data || {};
+    if (m.from === me) return;
+    if (m.t === 'bye') { Sync.yielded = false; updatePill(); runQueue(); return; }
+    if (m.t !== 'hello') return;
+    Sync.yielded = true; updatePill();
+    if (document.getElementById('othertab')) return;
+    document.body.append(h('div', { id: 'othertab', class: 'othertab', role: 'status' },
+      h('span', { text: 'Lectern is open in another tab, so this one has paused syncing. Reload to catch up.' }),
+      btn('Reload', { primary: true, onclick: () => location.reload() }),
+      btn('Dismiss', { quiet: true, onclick: () => document.getElementById('othertab').remove() })));
+  };
+  ch.postMessage({ t: 'hello', from: me });
+  window.addEventListener('pagehide', () => ch.postMessage({ t: 'bye', from: me }));
+}
+
 /* ============ start ============ */
 async function init() {
   applyTheme();
@@ -2556,13 +2595,14 @@ async function init() {
   window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) document.body.classList.remove('dragging'); });
   window.addEventListener('dragover', e => { if ([...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); });
   window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files, Deck.d && App.ui.route && App.ui.route.name === 'd' ? Deck.d.id : null); });
-  $('#sync-pill').addEventListener('click', () => syncReady() ? syncNow(true) : openSettings('sync'));
+  $('#sync-pill').addEventListener('click', () => Sync.yielded ? location.reload() : syncReady() ? syncNow(true) : openSettings('sync'));
   const setup = /^#sync=/.test(location.hash) ? readSetupHash() : null;
   const isScreen = /^#\/screen\//.test(location.hash);
   route();
   if (isScreen) return;   // the projector window only shows slides
   updatePill(); renderTray();
-  syncInit(); runQueue();
+  syncInit(); runQueue(); healSync().catch(() => { });
+  watchOtherTabs();
   if (setup) offerSetupLink(setup);
   else if (!App.prefs.tourDone && !liveDecks().length) showTour();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist(); }).catch(() => { });

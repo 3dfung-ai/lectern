@@ -78,6 +78,7 @@ code { font-family: Consolas, ui-monospace, monospace; font-size: 13px; }
 .in-deck .pill { bottom: auto; top: auto; left: auto; right: 14px; bottom: 14px; }
 #toasts { position: fixed; right: 16px; top: 16px; z-index: 90; display: grid; gap: 8px; max-width: min(440px, calc(100vw - 32px)); }
 .toast { display: flex; align-items: center; gap: 10px; padding: 11px 8px 11px 14px; border-radius: 8px; background: var(--ink); color: var(--bg); box-shadow: var(--shadow); font-size: 14px; }
+.othertab { position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; z-index: 95; display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 16px; border-radius: 10px; background: var(--panel); color: var(--ink); border: 1px solid var(--rule2); box-shadow: var(--shadow); font-size: 14px; max-width: calc(100vw - 32px); }
 .toast.warn { background: var(--warn); color: #fff; }
 .toast span { flex: 1; }
 .toast .tbtn { border: 1px solid currentColor; background: transparent; color: inherit; border-radius: 5px; padding: 3px 9px; cursor: pointer; font-weight: 600; }
@@ -171,8 +172,8 @@ body.dragging::after { content: 'Drop to add to Lectern'; position: fixed; inset
 .card .cnext { margin: 0; font-size: 13px; color: var(--mut); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pic { position: relative; width: 100%; background: var(--panel2); overflow: hidden; }
 .pic img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.pic.textpic { display: grid; place-items: center; padding: 6%; background: var(--panel2); }
-.pic .tp { text-align: center; color: var(--mut); overflow: hidden; } .pic .tp b { display: block; color: var(--ink); font: 600 clamp(11px, 2.2vw, 26px)/1.2 var(--serif); } .pic .tp p { white-space: pre-line; font-size: clamp(9px, 1.2vw, 15px); }
+.pic.textpic { display: grid; place-items: center; padding: 6%; background: var(--panel2); container-type: inline-size; }
+.pic .tp { text-align: center; color: var(--mut); overflow: hidden; } .pic .tp b { display: block; color: var(--ink); font: 600 clamp(9px, 6cqw, 26px)/1.2 var(--serif); overflow-wrap: anywhere; } .pic .tp p { white-space: pre-line; font-size: clamp(8px, 2.6cqw, 15px); }
 .empty { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px; margin-top: 24px; }
 .drop-hero { display: grid; place-items: center; align-content: center; gap: 6px; min-height: 340px; padding: 30px; border: 2px dashed var(--rule2); border-radius: 16px; text-align: center; cursor: pointer; color: var(--mut); }
 .drop-hero:hover { border-color: var(--brass-fill); color: var(--brass); }
@@ -388,6 +389,18 @@ button.libitem { border: 0; background: none; cursor: pointer; justify-content: 
   .printsheet { max-width: none; padding: 0; } .pslide { min-height: 88mm; border-color: #bbb; } .pnotes { color: #000; } .pausemark { color: #000; }
 }
 /* small screens */
+/* short laptop screens (or a zoomed browser): give the height back to the slide */
+@media (max-height: 820px) {
+  .railrow { padding: 8px 16px 6px; }
+  .railrow .step { grid-template-columns: auto auto minmax(0, 1fr); padding: 7px 12px; }
+  .railrow .step .sn { grid-row: auto; width: 22px; height: 22px; font-size: 12px; }
+  .railrow .step .sdet { grid-column: auto; }
+  .railrow .next { padding-top: 6px; }
+  .rbar { padding: 6px 14px; }
+  .stage { padding: 10px 60px; }
+  .underbar { padding: 6px 16px; }
+  .filmstrip { padding: 6px 12px; } .fthumb { width: 104px; }
+}
 @media (max-width: 1500px) { .acts kbd { display: none; } }
 @media (max-width: 980px) {
   .work { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(200px, 40%); }
