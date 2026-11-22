@@ -1,5 +1,5 @@
 /* Lectern offline cache: the app opens with no internet; your talks live in the browser's database. */
-const CACHE = 'lectern-f8860717';
+const CACHE = 'lectern-e183818b';
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './vendor/jszip.min.js', './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs', './vendor/serif.woff2', './vendor/serif-italic.woff2',
   './tts-worker.js', './mp3-worker.js', './vendor/lamejs.iife.js', './vendor/kokoro.web.js', './vendor/qrcode.js', './lectern-sync.gs'];

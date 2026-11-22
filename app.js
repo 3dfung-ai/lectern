@@ -2633,7 +2633,8 @@ async function init() {
     const hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js').catch(() => { });
     // a new version took over: offer a reload, never force one (it could land mid-run)
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) toast('Lectern has been updated.', { ms: 15000, action: { label: 'Reload', fn: () => location.reload() } }); });
+    // (a fresh page load already has the new version, so only a long-open page is told)
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && performance.now() > 20000) toast('Lectern has been updated.', { ms: 15000, action: { label: 'Reload', fn: () => location.reload() } }); });
   }
   window.addEventListener('beforeunload', e => { if (Run.active || Mp3.running) { e.preventDefault(); e.returnValue = ''; } });
 }
