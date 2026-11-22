@@ -13,11 +13,12 @@ function pub(f) { return { id: f.id, name: f.name, size: f.bytes.length, md5: f.
 function inFolder(folder) { return Object.values(S.files).filter(f => !f.trashed && f.folder === folder); }
 // a small PDF library: two topic folders with scope files and PDFs
 const tinyPdf = Buffer.from('%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj trailer<</Root 1 0 R>>\n%%EOF');
-for (const [folder, scope, n] of [['NotebookLM PDFs/01 Laboratory/S/01-S1 Macroenzymes & macro-analytes', 'Macro-TSH, macroprolactin, macro-CK: detection by PEG and gel filtration.', 3],
+function seed() { for (const [folder, scope, n] of [['NotebookLM PDFs/01 Laboratory/S/01-S1 Macroenzymes & macro-analytes', 'Macro-TSH, macroprolactin, macro-CK: detection by PEG and gel filtration.', 3],
   ['NotebookLM PDFs/06 Diabetes/F/06-F2 HbA1c interferences', 'Haemoglobin variants and HbA1c methods.', 2]]) {
   addFile(folder, '00 Scope.md', Buffer.from('# Scope\n' + scope), 'text/markdown');
   for (let i = 0; i < n; i++) addFile(folder, `20${10 + i} - Author - Paper ${i + 1}.pdf`, tinyPdf, 'application/pdf');
-}
+} }
+seed();
 module.exports = { S };
 
 function op(req) {
@@ -109,6 +110,7 @@ http.createServer((rq, rs) => {
     });
     return;
   }
+  if (rq.url.startsWith('/__reset')) { Object.assign(S, { rev: 0, records: {}, files: {}, uploads: {}, props: {}, calls: [] }); seed(); rs.writeHead(200); rs.end('ok'); return; }
   if (rq.url.startsWith('/__state')) { rs.writeHead(200, { 'Content-Type': 'application/json' }); rs.end(JSON.stringify({ records: S.records, files: Object.values(S.files).map(f => Object.assign(pub(f), { folder: f.folder, trashed: f.trashed })), calls: S.calls })); return; }
   if (rq.url.startsWith('/__put')) {   // test hook: drop a file into a Drive folder, or replace a file's content
     const u = new URL(rq.url, 'http://x'); const chunks = []; rq.on('data', c => chunks.push(c)); rq.on('end', () => {

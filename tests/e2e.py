@@ -12,6 +12,7 @@ def check(name, cond, detail=''):
     results.append((name, bool(cond), detail))
     print(('PASS ' if cond else 'FAIL ') + name + (('  ' + str(detail)) if detail and not cond else ''))
 def state(): return json.load(urllib.request.urlopen(BASE + '__state'))
+urllib.request.urlopen(BASE + '__reset').read()  # a clean mock Drive for every run
 def put(folder, name, path):
     req = urllib.request.Request(BASE + f'__put?folder={urllib.parse.quote(folder)}&name={urllib.parse.quote(name)}', data=open(path, 'rb').read(), method='POST')
     return json.load(urllib.request.urlopen(req))
@@ -248,6 +249,12 @@ with sync_playwright() as p:
     pa.screenshot(path='/tmp/lectern-review.png')
     pa.keyboard.press('r'); time.sleep(0.8); pa.screenshot(path='/tmp/lectern-rehearse.png')
     pa.goto(BASE + '#/'); time.sleep(1.5); pa.screenshot(path='/tmp/lectern-library.png', full_page=True)
+    # ---- a second tab: the older one pauses syncing and says so; it resumes when the newer one closes
+    p2 = A.new_page(); p2.goto(BASE + '#/'); p2.wait_for_selector('#sync-pill'); time.sleep(1)
+    check('older tab pauses and says so', pa.evaluate("Sync.yielded") and pa.is_visible('#othertab') and 'Paused' in pa.inner_text('#sync-pill'))
+    check('newer tab keeps syncing', not p2.evaluate("Sync.yielded"))
+    p2.close(); time.sleep(1)
+    check('older tab resumes when the newer closes', not pa.evaluate("Sync.yielded"))
     check('no page errors', not errs, errs)
     b.close()
 
