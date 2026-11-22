@@ -1,8 +1,8 @@
 /* Lectern offline cache: the app opens with no internet; your talks live in the browser's database. */
-const CACHE = 'lectern-01b7366a';
+const CACHE = 'lectern-f8860717';
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
   './vendor/jszip.min.js', './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs', './vendor/serif.woff2', './vendor/serif-italic.woff2',
-  './tts-worker.js', './mp3-worker.js', './vendor/lamejs.iife.js', './vendor/kokoro.web.js', './lectern-sync.gs'];
+  './tts-worker.js', './mp3-worker.js', './vendor/lamejs.iife.js', './vendor/kokoro.web.js', './vendor/qrcode.js', './lectern-sync.gs'];
 // cache: 'reload' skips the browser's own HTTP cache, so an update never stores yesterday's files
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

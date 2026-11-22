@@ -2467,7 +2467,8 @@ async function openSettings(tab) {
       h('div', { class: 'form' }, h('label', {}, h('span', { text: 'Web app link' }), url), h('label', {}, h('span', { text: 'Sync key' }), key), h('label', {}, h('span', { text: 'This device’s name' }), dev)),
       h('div', { class: 'row' }, btn(syncReady() ? 'Reconnect' : 'Connect', { primary: true, onclick: async () => { msg.textContent = 'Connecting…'; const ok = await applySync(url.value.trim(), key.value.trim(), dev.value.trim()); msg.textContent = ok ? 'Connected and synced.' : 'Not connected.'; } }),
         syncReady() ? btn('Sync now', { icon: 'sync', onclick: () => syncNow(true) }) : null,
-        syncReady() ? btn('Copy setup link for another device', { onclick: () => copyText(setupLink(), 'Setup link copied. Open it in Brave on the other device. It contains your key: send it only to yourself.') }) : null), msg,
+        syncReady() ? btn('Set up your phone', { onclick: showPhoneQR }) : null,
+        syncReady() ? btn('Copy setup link for another computer', { onclick: () => copyText(setupLink(), 'Setup link copied. Open it in Brave on the other computer. It contains your key: send it only to yourself.') }) : null), msg,
       syncReady() && App.sync.lastSync ? h('p', { class: 'mut', text: `Last synced ${new Date(App.sync.lastSync).toLocaleString()}${App.sync.server ? `; Drive holds ${App.sync.server.count} records, last saved by ${App.sync.server.savedBy || '…'}` : ''}.` }) : null,
       App.queue.length ? h('p', { class: 'mut', text: `${plural(App.queue.length, 'transfer')} waiting: ${App.queue.slice(0, 4).map(j => JOB_LABEL[j.t]).join('; ')}.` }) : null,
       h('details', {}, h('summary', { text: 'The sync script (for setting up from scratch)' }), h('p', { class: 'mut', text: 'script.google.com › New project › paste this › run setup › Deploy as a web app (Execute as: Me; Who has access: Anyone).' }),
@@ -2551,6 +2552,28 @@ window.addEventListener('message', async e => {
     e.source.postMessage({ type: 'flow-deck-done', idx: m.idx, ok: false, error: String(err.message || err) }, e.origin);
   }
 });
+
+/* ============ phone setup: a QR code of the setup link ============ */
+function loadScript(src) {
+  return new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res(); const s = h('script', { src }); s.onload = res; s.onerror = rej; document.head.append(s); });
+}
+async function showPhoneQR() {
+  try { await loadScript('vendor/qrcode.js'); } catch (e) { toast('Couldn’t load the QR maker. Use Copy setup link instead.'); return; }
+  const qr = qrcode(0, 'M'); qr.addData(setupLink()); qr.make();
+  const n = qr.getModuleCount(), q = 4, size = n + q * 2; let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + q} ${r + q}h1v1h-1z`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="260" height="260" shape-rendering="crispEdges" role="img" aria-label="QR code with this device's setup link"><rect width="${size}" height="${size}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  const box = h('div', { class: 'qrbox' }); box.innerHTML = svg;
+  modal({
+    title: 'Set up your phone',
+    body: [box,
+      h('ol', { class: 'qrsteps' },
+        h('li', { text: 'Point your phone’s camera at the code and tap the link.' }),
+        h('li', { text: 'Lectern opens and asks to turn on sync. Say yes, on Wi-Fi: the slide pictures are a big first download.' }),
+        h('li', { text: 'Then Share › Add to Home Screen, so it opens like an app.' })),
+      h('p', { class: 'hint', text: 'The code contains your sync key. Close this when you’re done.' })],
+  });
+}
 
 /* ============ two tabs open at once ============ */
 // Both tabs share one store. The newest tab does the syncing; an older one pauses its syncing,

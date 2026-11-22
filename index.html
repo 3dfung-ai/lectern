@@ -78,6 +78,8 @@ code { font-family: Consolas, ui-monospace, monospace; font-size: 13px; }
 .in-deck .pill { bottom: auto; top: auto; left: auto; right: 14px; bottom: 14px; }
 #toasts { position: fixed; right: 16px; top: 16px; z-index: 90; display: grid; gap: 8px; max-width: min(440px, calc(100vw - 32px)); }
 .toast { display: flex; align-items: center; gap: 10px; padding: 11px 8px 11px 14px; border-radius: 8px; background: var(--ink); color: var(--bg); box-shadow: var(--shadow); font-size: 14px; }
+.qrbox { display: grid; place-items: center; padding: 6px 0 12px; } .qrbox svg { border-radius: 8px; max-width: 70vw; height: auto; }
+.qrsteps { margin: 0 0 8px 1.2em; padding: 0; display: grid; gap: 6px; }
 .othertab { position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; z-index: 95; display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 16px; border-radius: 10px; background: var(--panel); color: var(--ink); border: 1px solid var(--rule2); box-shadow: var(--shadow); font-size: 14px; max-width: calc(100vw - 32px); }
 .toast.warn { background: var(--warn); color: #fff; }
 .toast span { flex: 1; }
