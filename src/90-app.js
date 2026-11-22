@@ -315,7 +315,12 @@ async function init() {
   if (setup) offerSetupLink(setup);
   else if (!App.prefs.tourDone && !liveDecks().length) showTour();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist(); }).catch(() => { });
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { });
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').catch(() => { });
+    // a new version took over: offer a reload, never force one (it could land mid-run)
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) toast('Lectern has been updated.', { ms: 15000, action: { label: 'Reload', fn: () => location.reload() } }); });
+  }
   window.addEventListener('beforeunload', e => { if (Run.active || Mp3.running) { e.preventDefault(); e.returnValue = ''; } });
 }
 init().catch(e => { console.error(e); document.body.prepend(h('p', { class: 'fatal', text: 'Lectern couldn’t start: ' + (e.message || e) })); });
