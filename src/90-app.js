@@ -261,6 +261,28 @@ window.addEventListener('message', async e => {
   }
 });
 
+/* ============ two tabs open at once ============ */
+// Both tabs share one store. The newest tab does the syncing; an older one pauses its syncing,
+// says so, and offers a reload, so two tabs never upload the same files or work from stale copies.
+function watchOtherTabs() {
+  if (!('BroadcastChannel' in window)) return;
+  const ch = new BroadcastChannel('lectern-tabs'), me = uid('t');
+  ch.onmessage = e => {
+    const m = e.data || {};
+    if (m.from === me) return;
+    if (m.t === 'bye') { Sync.yielded = false; updatePill(); runQueue(); return; }
+    if (m.t !== 'hello') return;
+    Sync.yielded = true; updatePill();
+    if (document.getElementById('othertab')) return;
+    document.body.append(h('div', { id: 'othertab', class: 'othertab', role: 'status' },
+      h('span', { text: 'Lectern is open in another tab, so this one has paused syncing. Reload to catch up.' }),
+      btn('Reload', { primary: true, onclick: () => location.reload() }),
+      btn('Dismiss', { quiet: true, onclick: () => document.getElementById('othertab').remove() })));
+  };
+  ch.postMessage({ t: 'hello', from: me });
+  window.addEventListener('pagehide', () => ch.postMessage({ t: 'bye', from: me }));
+}
+
 /* ============ start ============ */
 async function init() {
   applyTheme();
@@ -282,13 +304,14 @@ async function init() {
   window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) document.body.classList.remove('dragging'); });
   window.addEventListener('dragover', e => { if ([...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); });
   window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files, Deck.d && App.ui.route && App.ui.route.name === 'd' ? Deck.d.id : null); });
-  $('#sync-pill').addEventListener('click', () => syncReady() ? syncNow(true) : openSettings('sync'));
+  $('#sync-pill').addEventListener('click', () => Sync.yielded ? location.reload() : syncReady() ? syncNow(true) : openSettings('sync'));
   const setup = /^#sync=/.test(location.hash) ? readSetupHash() : null;
   const isScreen = /^#\/screen\//.test(location.hash);
   route();
   if (isScreen) return;   // the projector window only shows slides
   updatePill(); renderTray();
-  syncInit(); runQueue();
+  syncInit(); runQueue(); healSync().catch(() => { });
+  watchOtherTabs();
   if (setup) offerSetupLink(setup);
   else if (!App.prefs.tourDone && !liveDecks().length) showTour();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist(); }).catch(() => { });

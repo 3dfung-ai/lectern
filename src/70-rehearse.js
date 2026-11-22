@@ -242,7 +242,11 @@ async function makeTalkMp3(d) {
   Voice.stop();
   Mp3.running = true; Mp3.cancel = false;
   const tid = uid('t'); const started = Date.now();
-  trayItem(tid, { title: `MP3: ${d.title}`, step: 'Starting', p: 0 });
+  // Kokoro runs about 3.5x faster than speech on a laptop GPU, about 1.2x without one
+  const listenMin = slides.reduce((a, s) => a + wordsOf(noteText(d, s.n)), 0) / (App.prefs.wpm || 140);
+  const makeMs = listenMin * 60000 / (Voice.device === 'webgpu' ? 3.5 : 1.2);
+  toast(`Making the talk MP3 takes about ${fmtMin(Math.max(1, makeMs / 60000))} on this computer. Keep this tab open; you can carry on working.`, { ms: 9000 });
+  trayItem(tid, { title: `MP3: ${d.title}`, step: `Starting, about ${fmtMin(Math.max(1, makeMs / 60000))}`, p: 0 });
   const enc = new Worker('mp3-worker.js');
   const parts = []; const chapters = []; let samples = 0, sr = 24000;
   enc.onmessage = e => { if (e.data.type === 'data') parts.push(e.data.buf); };
