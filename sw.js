@@ -6,7 +6,8 @@ const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './ic
 // cache: 'reload' skips the browser's own HTTP cache, so an update never stores yesterday's files
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('lectern-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  // old app versions go; the voice engine's own cache (lectern-voice) stays, so an update never re-downloads it
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => /^lectern-[0-9a-f]{8}$/.test(k) && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 function withTimeout(p, ms) { return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]); }
 self.addEventListener('fetch', e => {
