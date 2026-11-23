@@ -162,7 +162,7 @@ const DB = {
 };
 
 /* ============ app state ============ */
-const DEFAULT_PREFS = { voice: 'bm_george', speed: 1, wpm: 140, theme: 'system', notesSize: 19, tourDone: false, filmstrip: true, notesOpen: true, readHint: 0 };
+const DEFAULT_PREFS = { voice: 'bm_george', speed: 1, wpm: 140, theme: 'system', notesSize: 19, tourDone: false, filmstrip: false, notesOpen: true, readHint: 0 };
 const App = {
   decks: new Map(),       // id -> deck
   versions: new Map(),    // id -> version (with slides)

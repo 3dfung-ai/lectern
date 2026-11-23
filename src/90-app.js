@@ -31,7 +31,7 @@ function rerender() {
     Deck.d = null; renderDeck(d.id, Deck.n, keep);
   } else if (r.name === 'library' || !r.name) renderLibraryBody();
 }
-function rerenderRail() { const r = $('.railrow'); if (r && Deck.d) r.replaceChildren(railHtml(Deck.d, false), nextHtml(Deck.d, false)); }
+function rerenderRail() { const r = $('.dhead .st'); if (r && Deck.d) r.replaceWith(statusChip(Deck.d)); }
 
 /* ============ keyboard ============ */
 const typing = e => { const t = e.target; return t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); };
@@ -92,7 +92,7 @@ function onKey(e) {
 /* ============ help, shortcuts, where things live ============ */
 function openHelp() {
   const keys = [['← →  Space', 'Previous / next slide'], ['12 then Enter', 'Go to slide 12'], ['E', 'Edit the notes of this slide'], ['C', 'Flag this slide for Claude to change'], ['J', 'Jot an idea for a talk'],
-    ['L', 'Read this slide’s notes aloud'], ['V  R  P', 'Review, Rehearse, Present'], ['S', 'Start or finish a timed run (Rehearse)'], ['G', 'All slides'], ['T  N', 'Filmstrip, script panel'],
+    ['L', 'Read this slide’s notes aloud'], ['V  R  P', 'Review, Rehearse, Present'], ['S', 'Start or finish a timed run (Rehearse)'], ['G', 'All slides'], ['T  N', 'Filmstrip, notes panel'],
     ['F', 'Full screen'], ['B', 'Blank the projector (presenting)'], ['/', 'Search (library)'], ['Ctrl+K', 'Find any action'], ['?', 'This help']];
   modal({ title: 'How Lectern works', wide: true, body: h('div', { class: 'help' }, howItWorks(),
     h('h3', { text: 'Keys' }), h('dl', { class: 'keys' }, keys.map(([k, d]) => [h('dt', {}, h('kbd', { text: k })), h('dd', { text: d })])),
@@ -312,6 +312,7 @@ async function init() {
   await DB.open();
   const kv = await DB.all('kv');
   Object.assign(App.prefs, kv.get('prefs') || {});
+  if (!App.prefs.ui2) { App.prefs.filmstrip = false; App.prefs.ui2 = true; saveKV('prefs'); }   // the tidier layout: filmstrip only when wanted
   applyTheme();
   Object.assign(App.sync, kv.get('sync') || {});
   App.queue = kv.get('queue') || [];
@@ -327,7 +328,7 @@ async function init() {
   window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) document.body.classList.remove('dragging'); });
   window.addEventListener('dragover', e => { if ([...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); });
   window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files, Deck.d && App.ui.route && App.ui.route.name === 'd' ? Deck.d.id : null); });
-  $('#sync-pill').addEventListener('click', () => Sync.yielded ? location.reload() : syncReady() ? syncNow(true) : openSettings('sync'));
+  syncPill().addEventListener('click', () => Sync.yielded ? location.reload() : syncReady() ? syncNow(true) : openSettings('sync'));
   const setup = /^#sync=/.test(location.hash) ? readSetupHash() : null;
   const isScreen = /^#\/screen\//.test(location.hash);
   route();

@@ -77,60 +77,80 @@ function seriesGroups() {
   return [...groups.entries()].sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1) || a[0].localeCompare(b[0]));
 }
 function appendixOf(d) { return liveDecks().find(x => x.mainId === d.id); }
-function deckCard(d) {
-  const v = deckVer(d);
-  const mins = talkMinutes(d), ap = appendixOf(d);
-  const resume = d.pos && d.pos.n > 1 && v && d.pos.n <= v.slides.length;
-  const card = h('article', { class: 'card', tabindex: '0', onclick: () => go(`#/d/${d.id}/${resume ? d.pos.n : 1}`), onkeydown: e => { if (e.key === 'Enter') go(`#/d/${d.id}/${resume ? d.pos.n : 1}`); } },
-    v ? slideImage(v, 1, false, 'cover') : h('div', { class: 'pic cover textpic' }),
-    h('div', { class: 'cbody' },
-      h('h3', { text: d.title }),
-      h('p', { class: 'meta' }, v ? `${plural(v.slides.length, 'slide')}${mins ? ', ' + fmtMin(mins) : ''}` : 'No slides', ap ? ', with appendix' : '', resume ? h('span', { class: 'resume', text: `Resume at ${d.pos.n}` }) : null),
-      railHtml(d, true),
-      h('p', { class: 'cnext', text: pipeline(d).next.text })));
-  return card;
+/* one word for where a talk stands; the full pipeline lives in How it works and the talk's status */
+function statusWord(d) {
+  const v = deckVer(d), p = d.prep || {}, t = d.think, days = daysTo(d.date);
+  if (!v && t) return t.stage === 'building' ? ['Building', 'part'] : ['Thinking', 'part'];
+  if (!v) return ['No slides', ''];
+  if (draftCount(d)) return ['Unsaved', 'warn'];
+  if (v.picsState === 'failed') return ['Needs PDF', 'warn'];
+  if (p.presented) return ['Given', 'done'];
+  if (!p.timed) return ['Rehearse', ''];
+  if (openRequests(d)) return ['Flagged', 'warn'];
+  if (!p.printed && (days === null || days <= 14)) return ['Rehearse', ''];
+  if (days !== null && days < 0) return ['Given?', 'warn'];
+  return ['Ready', 'done'];
+}
+function statusTag(d, tag) { const [w, c] = statusWord(d); return h(tag || 'span', { class: 'st' + (c ? ' st-' + c : ''), title: pipeline(d).next.text, text: w }); }
+function openAt(d) { const v = deckVer(d); return d.pos && v && d.pos.n > 1 && d.pos.n <= v.slides.length ? d.pos.n : 1; }
+function whenText(d) {
+  const days = daysTo(d.date);
+  if (days === null) return '';
+  if (days === 0) return 'Today'; if (days === 1) return 'Tomorrow';
+  return fmtDate(d.date);
+}
+function talkRow(d) {
+  const v = deckVer(d), mins = talkMinutes(d);
+  return h('a', { class: 'trow', href: `#/d/${d.id}/${openAt(d)}` },
+    h('span', { class: 'tthumb' }, v ? slideImage(v, 1, false) : h('div', { class: 'pic textpic' })),
+    h('span', { class: 'ttitle', text: d.title }),
+    h('span', { class: 'tmeta', text: v ? `${plural(v.slides.length, 'slide')}${mins ? ', ' + fmtMin(mins) : ''}` : mins ? fmtMin(mins) : '' }),
+    h('span', { class: 'tdate', text: (d.prep || {}).presented ? '' : whenText(d) }),
+    statusTag(d));
+}
+function upNext() {
+  const decks = liveDecks().filter(d => d.role !== 'appendix');
+  const upcoming = decks.filter(d => d.date && daysTo(d.date) >= 0 && !(d.prep || {}).presented).sort((a, b) => a.date.localeCompare(b.date))[0];
+  const recent = decks.filter(d => d.pos && d.pos.at && Date.now() - new Date(d.pos.at) < 21 * 86400000).sort((a, b) => String(b.pos.at).localeCompare(a.pos.at))[0];
+  const d = upcoming || recent;
+  if (!d) return null;
+  const days = upcoming ? daysTo(d.date) : null, nx = pipeline(d).next;
+  const when = upcoming ? (days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`) : 'Last opened';
+  return h('section', { class: 'upnext', 'aria-label': 'Up next' },
+    h('p', { class: 'unk' }, h('b', { text: 'Up next' }), h('span', { text: when })),
+    h('a', { class: 'untitle', href: `#/d/${d.id}/${openAt(d)}`, text: d.title }),
+    nx.label ? btn(nx.label, { primary: true, title: nx.text, onclick: nx.fn }) : btn(openAt(d) > 1 ? `Open at slide ${openAt(d)}` : 'Open', { primary: true, title: nx.text, onclick: () => go(`#/d/${d.id}/${openAt(d)}`) }));
 }
 function renderLibrary() {
   const main = $('#main');
-  const decks = liveDecks();
   const head = h('header', { class: 'libhead' },
-    h('div', { class: 'brandrow' }, h('h1', { class: 'brand' }, 'Lectern'), h('p', { class: 'tag', text: 'Your talks, from the first idea to the podium.' }),
-      h('div', { class: 'headbtns' }, btn('How it works', { icon: 'help', quiet: true, onclick: () => openHelp() }), btn('Settings', { icon: 'gear', quiet: true, iconOnly: true, onclick: () => openSettings() }))),
-    h('div', { class: 'searchrow' },
-      h('label', { class: 'search' }, icon('search'), h('input', { id: 'libq', type: 'search', placeholder: 'Search every slide and note', value: Lib.q, autocomplete: 'off', spellcheck: 'false',
-        oninput: debounce(e => { Lib.q = e.target.value; renderLibraryBody(); }, 120), onkeydown: e => { if (e.key === 'Enter') { const f = $('.hit'); if (f) f.click(); } } }), h('kbd', { text: '/' })),
-      btn('Add a talk', { icon: 'plus', primary: true, onclick: () => pickFiles('.pptx,.pdf') })));
+    h('h1', { class: 'brand' }, 'Lectern'),
+    h('label', { class: 'search' }, icon('search'), h('input', { id: 'libq', type: 'search', placeholder: 'Search every slide and note', 'aria-label': 'Search every slide and note', value: Lib.q, autocomplete: 'off', spellcheck: 'false',
+      oninput: debounce(e => { Lib.q = e.target.value; renderLibraryBody(); }, 120), onkeydown: e => { if (e.key === 'Enter') { const f = $('.hit') || $('.results .trow'); if (f) f.click(); } } }), h('kbd', { text: '/' })),
+    h('div', { class: 'headbtns' },
+      btn('Add a talk', { icon: 'plus', quiet: true, title: 'Add a PowerPoint or PDF (or drop it anywhere)', onclick: () => pickFiles('.pptx,.pdf') }),
+      btn('How it works', { icon: 'help', iconOnly: true, quiet: true, title: 'How it works (?)', onclick: () => openHelp() }),
+      btn('Settings', { icon: 'gear', iconOnly: true, quiet: true, title: 'Settings', onclick: () => openSettings() }),
+      syncPill()));
   main.replaceChildren(head, h('div', { id: 'libbody' }));
   renderLibraryBody();
-  if (!decks.length) return;
 }
 function renderLibraryBody() {
   const body = $('#libbody'); if (!body) return;
   const decks = liveDecks();
   if (Lib.q.trim()) { body.replaceChildren(searchResults(Lib.q.trim())); return; }
   if (!decks.length) { body.replaceChildren(emptyLibrary()); return; }
-  const out = [];
-  const recent = decks.filter(d => d.pos && d.pos.at).sort((a, b) => String(b.pos.at).localeCompare(a.pos.at))[0];
-  const upcoming = decks.filter(d => d.date && daysTo(d.date) >= 0 && !(d.prep || {}).presented).sort((a, b) => a.date.localeCompare(b.date))[0];
-  const focus = upcoming || recent;
-  if (focus) {
-    const v = deckVer(focus);
-    out.push(h('section', { class: 'focus' }, h('div', { class: 'ftext' },
-      h('p', { class: 'fk', text: upcoming ? (daysTo(focus.date) === 0 ? 'Talk today' : `Next talk, in ${plural(daysTo(focus.date), 'day')}`) : 'Carry on where you left off' }),
-      h('h2', { text: focus.title }),
-      railHtml(focus, false), nextHtml(focus, false),
-      h('div', { class: 'factions' }, btn(focus.pos && focus.pos.n > 1 ? `Open at slide ${focus.pos.n}` : 'Open', { primary: false, onclick: () => go(`#/d/${focus.id}/${focus.pos && focus.pos.n || 1}`) }))),
-      v ? h('div', { class: 'fpic', onclick: () => go(`#/d/${focus.id}/${focus.pos && focus.pos.n || 1}`) }, slideImage(v, Math.min(v.slides.length, focus.pos && focus.pos.n || 1), true)) : null));
-  }
-  for (const [series, list] of seriesGroups()) {
+  const out = [upNext()];
+  const groups = seriesGroups();
+  for (const [series, list] of groups) {
     const k = series || '_';
     const coll = !!Lib.collapsed[k];
     out.push(h('section', { class: 'group' },
       h('button', { type: 'button', class: 'ghead', 'aria-expanded': String(!coll), onclick: () => { Lib.collapsed[k] = !coll; renderLibraryBody(); } },
-        h('h2', { text: series || (seriesGroups().length > 1 ? 'Other talks' : 'Talks') }), h('span', { class: 'gcount', text: plural(list.length, 'talk') })),
-      coll ? null : h('div', { class: 'cards' }, list.map(deckCard))));
+        h('h2', { text: series || (groups.length > 1 ? 'Other talks' : 'Talks') }), h('span', { class: 'gcount', text: list.length })),
+      coll ? null : h('div', { class: 'tlist' }, list.map(talkRow))));
   }
-  body.replaceChildren(...out);
+  body.replaceChildren(...out.filter(Boolean));
 }
 function emptyLibrary() {
   return h('section', { class: 'empty' },
@@ -169,7 +189,7 @@ function searchResults(q) {
   }
   const wrap = h('section', { class: 'results' });
   if (!talks.length && !hits.length) { wrap.append(h('p', { class: 'none', text: `Nothing matches “${q}”. Try fewer words.` })); return wrap; }
-  if (talks.length) wrap.append(h('h2', { text: plural(talks.length, 'talk') }), h('div', { class: 'cards' }, talks.map(deckCard)));
+  if (talks.length) wrap.append(h('h2', { text: plural(talks.length, 'talk') }), h('div', { class: 'tlist' }, talks.map(talkRow)));
   if (hits.length) wrap.append(h('h2', { text: `${hits.length > 120 ? '120+' : hits.length} slides` }), h('div', { class: 'hits' }, hits.map(x =>
     h('button', { type: 'button', class: 'hit', onclick: () => go(`#/d/${x.d.id}/${x.s.n}`) },
       slideImage(x.v, x.s.n, false), h('div', { class: 'htext' }, h('p', { class: 'hk' }, h('span', { text: x.d.title }), ` slide ${x.s.n}`, x.where === 'notes' ? h('i', { text: ' in notes' }) : null),

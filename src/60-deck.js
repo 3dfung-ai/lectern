@@ -14,19 +14,27 @@ function renderDeck(id, n, mode) {
   if (!changedDeck && $('#main .deck')) { showSlide(Deck.n); return; }
   Deck.editing = false; Deck.grid = false;
   const main = $('#main');
-  const series = d.series ? h('span', { class: 'crumb', text: d.series }) : null;
   const head = h('header', { class: 'dhead' },
-    h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' }, h('a', { href: '#/', class: 'crumb home' }, icon('back'), 'Lectern'), series ? h('i', { class: 'sep', text: '›' }) : null, series,
-      h('i', { class: 'sep', text: '›' }), h('button', { type: 'button', class: 'dtitle', title: 'Rename', onclick: () => renameDeck(d) }, d.title)),
-    v ? h('div', { class: 'tabs', role: 'tablist' }, MODES.map(([m, label, key]) => h('button', { type: 'button', role: 'tab', class: 'tab' + (Deck.mode === m ? ' on' : ''), 'aria-selected': String(Deck.mode === m), title: `${label} (${key})`, onclick: () => setMode(m) }, label, h('kbd', { text: key })))) : h('div', { class: 'tabs' }),
-    h('div', { class: 'dtools' }, btn('Help', { icon: 'help', iconOnly: true, quiet: true, onclick: () => openHelp() }), btn('More', { icon: 'dots', iconOnly: true, quiet: true, onclick: e => deckMenu(d, e.currentTarget) })));
-  const wrap = h('div', { class: 'deck mode-' + Deck.mode }, head, h('div', { class: 'railrow' }, railHtml(d, false), nextHtml(d, false)));
+    h('div', { class: 'dleft' }, h('a', { href: '#/', class: 'home', title: 'All talks' }, icon('back'), h('span', { text: 'Lectern' })),
+      h('h1', { class: 'dtitle', title: d.series ? `${d.title}\n${d.series}` : d.title, text: d.title }), statusChip(d)),
+    v ? h('div', { class: 'tabs', role: 'tablist' }, MODES.map(([m, label, key]) => h('button', { type: 'button', role: 'tab', class: 'tab' + (Deck.mode === m ? ' on' : ''), 'aria-selected': String(Deck.mode === m), title: `${label} (${key})`, onclick: () => setMode(m) }, label))) : h('div', { class: 'tabs empty' }),
+    h('div', { class: 'dtools' }, btn('How it works', { icon: 'help', iconOnly: true, quiet: true, title: 'How it works (?)', onclick: () => openHelp() }), btn('More', { icon: 'dots', iconOnly: true, quiet: true, title: 'Talk details, versions, download…', onclick: e => deckMenu(d, e.currentTarget) }), syncPill()));
+  const wrap = h('div', { class: 'deck mode-' + Deck.mode }, head);
   if (Deck.mode === 'think') wrap.append(thinkView(d));
   else if (Deck.mode === 'present') wrap.append(presentStart(d));
   else wrap.append(workArea());
   main.replaceChildren(wrap);
   if (v && Deck.mode !== 'present' && Deck.mode !== 'think') showSlide(Deck.n, true);
   renderEditBar();
+}
+function statusChip(d) {
+  const [w, c] = statusWord(d);
+  return h('button', { type: 'button', class: 'st chip' + (c ? ' st-' + c : ''), title: 'Next: ' + pipeline(d).next.text + '\nClick to see every step.', onclick: () => openStatus(d) }, h('i'), w);
+}
+function openStatus(d) {
+  const body = h('div', { class: 'status' }, railHtml(d, false), nextHtml(d, false));
+  body.addEventListener('click', e => { if (e.target.closest('button')) closeModal(); }, true);
+  modal({ title: `Where “${d.title}” stands`, wide: true, body });
 }
 function setMode(m) { if (!Deck.d) return; if (Deck.mode === 'rehearse' && Run.active && m !== 'rehearse') { toast('Finish or stop the timed run first.'); return; } go(`#/d/${Deck.d.id}/${Deck.n}/${m}`); }
 
@@ -42,14 +50,16 @@ function workArea() {
   const under = h('div', { class: 'underbar' },
     h('div', { class: 'counter', id: 'counter' }),
     h('div', { class: 'acts' },
-      btn('Edit notes', { icon: 'edit', key: 'E', cls: 'act-edit', onclick: () => startEdit() }),
-      btn('Change this slide', { icon: 'flag', key: 'C', cls: 'act-flag', onclick: () => flagSlide() }),
-      btn('Read aloud', { icon: 'speaker', key: 'L', cls: 'act-read', onclick: () => Voice.toggleSlide(Deck.d, Deck.n) })),
+      btn('Edit notes', { icon: 'edit', key: 'E', quiet: true, cls: 'act-edit', onclick: () => startEdit() }),
+      btn('Flag for Claude', { icon: 'flag', key: 'C', quiet: true, cls: 'act-flag', title: 'Flag this slide for Claude to change (C)', onclick: () => flagSlide() }),
+      btn('Read aloud', { icon: 'speaker', key: 'L', quiet: true, cls: 'act-read', onclick: () => Voice.toggleSlide(Deck.d, Deck.n) })),
+    Deck.mode === 'rehearse' ? rehearseCtl() : null,
     h('div', { class: 'views' },
       btn('All slides', { icon: 'grid', iconOnly: true, quiet: true, title: 'All slides (G)', onclick: () => toggleGrid() }),
-      btn('Filmstrip', { icon: 'film', iconOnly: true, quiet: true, title: 'Filmstrip (T)', onclick: () => toggleFilm() }),
-      btn('Script', { icon: 'notes', iconOnly: true, quiet: true, title: 'Script panel (N)', onclick: () => toggleNotes() })));
-  const left = h('section', { class: 'stagecol' }, Deck.mode === 'rehearse' ? rehearseBar() : null, stage, under, film);
+      btn('Filmstrip', { icon: 'film', iconOnly: true, quiet: true, cls: 'v-film' + (App.prefs.filmstrip ? ' on' : ''), title: 'Filmstrip (T)', onclick: () => toggleFilm() }),
+      btn('Notes panel', { icon: 'notes', iconOnly: true, quiet: true, cls: 'v-notes' + (App.prefs.notesOpen ? ' on' : ''), title: 'Notes panel (N)', onclick: () => toggleNotes() })));
+  if (Deck.mode === 'rehearse') stage.append(h('div', { class: 'hud', id: 'hud', 'aria-live': 'off' }));
+  const left = h('section', { class: 'stagecol' }, stage, film, under);
   const script = h('aside', { class: 'script', id: 'script', hidden: !App.prefs.notesOpen });
   return h('div', { class: 'work' }, left, script);
 }
@@ -69,7 +79,7 @@ function showSlide(n, first) {
   const box = $('#slidebox'); if (!box) return;
   box.replaceChildren(slideImage(v, n, true, 'main'));
   const flags = slideFlags(d, n);
-  $('#counter').replaceChildren(...[h('b', { text: `${n}` }), h('span', { class: 'of', text: `/ ${v.slides.length}` }), h('span', { class: 'ct', text: s.title }),
+  $('#counter').replaceChildren(...[h('b', { text: `${n}` }), h('span', { class: 'of', text: `/ ${v.slides.length}` }),
     s.hidden ? h('span', { class: 'tagpill', text: 'hidden slide' }) : null,
     flags.length ? h('button', { type: 'button', class: 'tagpill flagged', title: flags.map(f => f.text).join('\n'), onclick: () => openImprove(d) }, icon('flag'), plural(flags.length, 'flag')) : null,
     draftFor(d) && draftFor(d).edits[n] !== undefined ? h('span', { class: 'tagpill edited', text: 'notes edited' }) : null].filter(Boolean));
@@ -93,7 +103,7 @@ function renderScript() {
   const text = noteText(d, n), words = wordsOf(text);
   const tgt = slideTargets(d)[n - 1] || 0;
   const head = h('div', { class: 'shead' },
-    h('h2', {}, 'Script', h('span', { class: 'smeta', text: words ? `${words} words, about ${fmtClock(words / App.prefs.wpm * 60000)}${tgt ? `; target ${fmtClock(tgt)}` : ''}` : 'No notes on this slide' })),
+    h('h2', {}, 'Notes', h('span', { class: 'smeta', text: words ? `${words} words, about ${fmtClock(words / App.prefs.wpm * 60000)}${tgt ? `; target ${fmtClock(tgt)}` : ''}` : 'No notes on this slide' })),
     h('div', { class: 'sctl' },
       btn('Smaller text', { iconOnly: true, quiet: true, cls: 'tsz', onclick: () => textSize(-1) }), h('span', { class: 'tsl', text: 'A' }), btn('Larger text', { iconOnly: true, quiet: true, cls: 'tsz up', onclick: () => textSize(1) })));
   let body;
@@ -136,7 +146,7 @@ function cueCards(text) {
 function textSize(dir) { App.prefs.notesSize = clamp(App.prefs.notesSize + dir * 2, 13, 34); saveKV('prefs'); renderScript(); }
 function startEdit() {
   if (!Deck.v) return;
-  if (!App.prefs.notesOpen) { App.prefs.notesOpen = true; const s = $('#script'); if (s) s.hidden = false; }
+  if (!App.prefs.notesOpen) toggleNotes();
   if (Voice.busy) Voice.stop();
   Deck.editing = true; renderScript();
 }
@@ -179,8 +189,8 @@ function flagSlide(n) {
 }
 
 /* ---------- views: filmstrip, notes panel, grid, full screen ---------- */
-function toggleFilm() { App.prefs.filmstrip = !App.prefs.filmstrip; saveKV('prefs'); const f = $('#film'); if (f) { f.hidden = !App.prefs.filmstrip; showSlide(Deck.n); } }
-function toggleNotes() { App.prefs.notesOpen = !App.prefs.notesOpen; saveKV('prefs'); const s = $('#script'); if (s) { s.hidden = !App.prefs.notesOpen; renderScript(); } }
+function toggleFilm() { App.prefs.filmstrip = !App.prefs.filmstrip; saveKV('prefs'); const f = $('#film'); if (f) { f.hidden = !App.prefs.filmstrip; showSlide(Deck.n); } const b = $('.v-film'); if (b) b.classList.toggle('on', App.prefs.filmstrip); }
+function toggleNotes() { App.prefs.notesOpen = !App.prefs.notesOpen; saveKV('prefs'); const s = $('#script'); if (s) { s.hidden = !App.prefs.notesOpen; renderScript(); } const b = $('.v-notes'); if (b) b.classList.toggle('on', App.prefs.notesOpen); }
 function toggleGrid() { Deck.grid = !Deck.grid; renderGrid(); }
 function renderGrid() {
   let g = $('#grid');
@@ -243,15 +253,19 @@ function deckMenu(d, anchor) {
     deckVer(d) ? ['Download the .pptx', () => downloadOriginal(d)] : null,
     deckVer(d) ? ['Use exact pictures from a PDF…', () => pickFiles('.pdf', d.id)] : null,
     deckVer(d) && syncReady() && deckVer(d).picsSrc !== 'pdf' ? ['Ask Google to redraw the pictures', () => { const v = deckVer(d); v.picsState = 'waiting'; v.picsSrc = ''; saveVersion(v); enqueue({ t: 'google', verId: v.id }); toast('Redrawing in the background.'); }] : null,
+    appendixOf(d) ? ['Open the appendix', () => go(`#/d/${appendixOf(d).id}/1`)] : null,
+    d.role === 'appendix' && d.mainId && App.decks.get(d.mainId) && !App.decks.get(d.mainId).deletedAt ? ['Back to the main talk', () => go(`#/d/${d.mainId}/${openAt(App.decks.get(d.mainId))}`)] : null,
+    ['Where this talk stands', () => openStatus(d)],
     ['Claude’s list for this talk', () => openImprove(d)],
     ['Move to deleted talks', () => deleteDeck(d)],
   ].filter(Boolean);
   popMenu(anchor, items);
 }
-function popMenu(anchor, items) {
+function popMenu(anchor, items, up) {
   closeMenus();
   const r = anchor.getBoundingClientRect();
-  const m = h('div', { class: 'menu', role: 'menu', style: { top: (r.bottom + 6) + 'px', right: Math.max(8, innerWidth - r.right) + 'px' } },
+  up = up || r.bottom > innerHeight * 0.6;   // near the bottom of the window: open upwards
+  const m = h('div', { class: 'menu', role: 'menu', style: Object.assign(up ? { bottom: (innerHeight - r.top + 6) + 'px' } : { top: (r.bottom + 6) + 'px' }, { right: Math.max(8, innerWidth - r.right) + 'px' }) },
     items.map(([label, fn]) => h('button', { type: 'button', role: 'menuitem', onclick: () => { closeMenus(); fn(); } }, label)));
   document.body.append(m);
   setTimeout(() => document.addEventListener('click', closeMenus, { once: true }), 0);

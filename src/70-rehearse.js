@@ -1,29 +1,26 @@
 /* ============ Rehearse: timed runs, cue cards, recording yourself, listening ============ */
 const Run = { active: false, paused: false, cue: false, rec: false, deckId: '', startAt: 0, pausedAt: 0, pausedMs: 0, segs: [], slideStart: 0, n: 0, recorder: null, chunks: [], tick: 0 };
-function rehearseBar() {
+function rehearseCtl() {
   const d = Deck.d;
   const hasMp3 = !!(d.prep && d.prep.mp3);
-  return h('div', { class: 'rbar', id: 'rbar' },
-    h('div', { class: 'rmain' },
-      Run.active ? null : btn('Start timed run', { primary: true, icon: 'clock', key: 'S', onclick: () => startRun(d) }),
-      Run.active ? btn(Run.paused ? 'Resume' : 'Pause', { icon: Run.paused ? 'play' : 'pause', onclick: () => Run.paused ? Run.resume() : Run.pause() }) : null,
-      Run.active ? btn('Finish run', { icon: 'stop', onclick: () => finishRun() }) : null,
-      h('div', { class: 'hud', id: 'hud' })),
-    h('div', { class: 'ropts' },
-      Run.cue ? toggleBtn('Cue cards', true, 'cards', 'Showing only the first and last line of each slide', () => { Run.cue = false; renderDeckBar(); renderScript(); }) : null,
-      Run.rec ? toggleBtn('Record me', true, 'mic', 'Your voice is recorded during the next timed run', () => { Run.rec = false; renderDeckBar(); }) : null,
-      btn('Print notes', { icon: 'print', onclick: () => go(`#/print/${d.id}`) }),
-      btn('Past runs', { icon: 'clock', quiet: true, onclick: () => openRuns(d) }),
-      btn('More', { icon: 'dots', quiet: true, onclick: e => popMenu(e.currentTarget, [
-        ['Practise likely questions', () => practiseQuestions(d)],
-        ['Read my notes aloud from here (turns the slides)', () => Voice.playOn(Deck.d, Deck.n)],
-        ['Read this slide aloud  (L)', () => Voice.toggleSlide(Deck.d, Deck.n)],
-        [hasMp3 ? 'Play the talk MP3' : 'Make the talk MP3, for the car', () => hasMp3 ? openMp3(d) : makeTalkMp3(d)],
-        [Run.cue ? 'Cue cards off' : 'Cue cards: only first and last lines', () => { Run.cue = !Run.cue; renderDeckBar(); renderScript(); }],
-        [Run.rec ? 'Don’t record me' : 'Record me during the next timed run', () => { if (Run.active) { toast('Recording starts with a timed run.'); return; } Run.rec = !Run.rec; renderDeckBar(); }]]) })));
+  const more = () => [
+    ['Print podium notes', () => go(`#/print/${d.id}`)],
+    ['Past timed runs', () => openRuns(d)],
+    ['Practise likely questions', () => practiseQuestions(d)],
+    ['Read this slide aloud  (L)', () => Voice.toggleSlide(Deck.d, Deck.n)],
+    ['Listen from here (reads the notes, turns the slides)', () => Voice.playOn(Deck.d, Deck.n)],
+    [hasMp3 ? 'Play the talk MP3' : 'Make the talk MP3, for the car', () => hasMp3 ? openMp3(d) : makeTalkMp3(d)],
+    [Run.cue ? 'Cue cards off' : 'Cue cards: only first and last lines', () => { Run.cue = !Run.cue; renderDeckBar(); renderScript(); }],
+    [Run.rec ? 'Don’t record me' : 'Record me during the next timed run', () => { if (Run.active) { toast('Recording starts with a timed run.'); return; } Run.rec = !Run.rec; renderDeckBar(); }]];
+  return h('div', { class: 'rctl', id: 'rctl' },
+    Run.cue ? toggleBtn('Cue cards', true, 'cards', 'Showing only the first and last line of each slide. Click to turn off.', () => { Run.cue = false; renderDeckBar(); renderScript(); }) : null,
+    Run.rec ? toggleBtn('Record me', true, 'mic', 'Your voice is recorded during the next timed run. Click to turn off.', () => { Run.rec = false; renderDeckBar(); }) : null,
+    Run.active ? btn(Run.paused ? 'Resume' : 'Pause', { icon: Run.paused ? 'play' : 'pause', onclick: () => Run.paused ? Run.resume() : Run.pause() }) : null,
+    Run.active ? btn('Finish run', { icon: 'stop', primary: true, key: 'S', onclick: () => finishRun() }) : btn('Start timed run', { primary: true, icon: 'clock', key: 'S', onclick: () => startRun(d) }),
+    Run.active ? null : btn('More', { quiet: true, cls: 'rmore', title: 'Print notes, past runs, questions, MP3, cue cards, recording', onclick: e => popMenu(e.currentTarget, more(), true) }));
 }
-function toggleBtn(label, on, ic, title, fn) { return h('button', { type: 'button', class: 'btn quiet tog' + (on ? ' on' : ''), 'aria-pressed': String(!!on), title, onclick: fn }, icon(ic), h('span', { text: label })); }
-function renderDeckBar() { const b = $('#rbar'); if (b) b.replaceWith(rehearseBar()); Run.render(); }
+function toggleBtn(label, on, ic, title, fn) { return h('button', { type: 'button', class: 'btn quiet tog' + (on ? ' on' : ''), 'aria-pressed': String(!!on), 'aria-label': label, title: label + ': ' + title, onclick: fn }, icon(ic), h('span', { class: 'tl', text: label })); }
+function renderDeckBar() { const b = $('#rctl'); if (b) b.replaceWith(rehearseCtl()); Run.render(); }
 
 function runElapsed() { return Run.active ? ((Run.paused ? Run.pausedAt : Date.now()) - Run.startAt - Run.pausedMs) : 0; }
 function slideElapsed() { return Run.active ? ((Run.paused ? Run.pausedAt : Date.now()) - Run.slideStart) : 0; }

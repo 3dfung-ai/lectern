@@ -368,9 +368,10 @@ async function planDownloads() {
   }
 }
 
-/* ---------- the pill at the corner ---------- */
+/* ---------- the sync dot in the header ---------- */
+function syncPill() { if (!App.pillEl) App.pillEl = document.getElementById('sync-pill'); return App.pillEl; }
 function updatePill() {
-  const p = $('#sync-pill'); if (!p) return;
+  const p = syncPill(); if (!p) return;
   let txt, cls = '';
   const q = App.queue.length, dirty = Object.keys(App.sync.dirty).length;
   if (!syncReady()) { txt = 'This device only'; cls = 'off'; }
@@ -382,8 +383,8 @@ function updatePill() {
   else if (q) { txt = `${q} waiting for Drive`; cls = 'warn'; }
   else if (dirty) { txt = 'Saving…'; cls = 'busy'; }
   else { txt = 'Synced with Drive'; cls = 'ok'; }
-  p.className = 'pill ' + cls; p.querySelector('span').textContent = txt;
-  p.title = Sync.yielded ? 'Lectern is open in another tab. Click to reload this one.' : syncReady() ? (App.sync.lastSync ? 'Last synced ' + new Date(App.sync.lastSync).toLocaleTimeString() : 'Not synced yet') + '. Click to sync now.' : 'Set up Drive sync so your talks reach your other devices.';
+  p.className = 'pill ' + cls; p.querySelector('span').textContent = txt; p.setAttribute('aria-label', txt);
+  p.title = txt + '. ' + (Sync.yielded ? 'Lectern is open in another tab. Click to reload this one.' : syncReady() ? (App.sync.lastSync ? 'Last synced ' + new Date(App.sync.lastSync).toLocaleTimeString() : 'Not synced yet') + '. Click to sync now.' : 'Set up Drive sync so your talks reach your other devices.');
 }
 
 /* ---------- connecting a device ---------- */

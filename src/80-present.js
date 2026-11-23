@@ -46,7 +46,7 @@ function renderSpeaker(id, n) {
   const wrap = h('div', { class: 'speaker' },
     h('div', { class: 'spmain' }, h('div', { class: 'spcur', id: 'spcur' }), h('div', { class: 'spbar' },
       btn('Previous', { icon: 'prev', iconOnly: true, onclick: () => speakerGo(Deck.n - 1) }), h('div', { class: 'spn', id: 'spn' }), btn('Next', { icon: 'next', iconOnly: true, onclick: () => speakerGo(Deck.n + 1) }),
-      btn('Blank the projector', { icon: 'black', key: 'B', quiet: true, cls: 'spblack', onclick: () => speakerBlack() }), btn('Change this slide', { icon: 'flag', key: 'C', quiet: true, onclick: () => flagSlide() }),
+      btn('Blank the projector', { icon: 'black', key: 'B', quiet: true, cls: 'spblack', onclick: () => speakerBlack() }), btn('Flag for Claude', { icon: 'flag', key: 'C', quiet: true, onclick: () => flagSlide() }),
       btn('End', { icon: 'close', quiet: true, onclick: () => endShow(d) }))),
     h('div', { class: 'spside' }, h('div', { class: 'spclock', id: 'spclock' }), h('div', { class: 'spnext', id: 'spnext' }), h('div', { class: 'spnotes', id: 'spnotes', style: { fontSize: (App.prefs.notesSize + 3) + 'px' } })));
   $('#main').replaceChildren(wrap);
