@@ -162,7 +162,7 @@ const DB = {
 };
 
 /* ============ app state ============ */
-const DEFAULT_PREFS = { voice: 'bm_george', speed: 1, wpm: 140, theme: 'system', notesSize: 19, tourDone: false, filmstrip: true, notesOpen: true, readHint: 0 };
+const DEFAULT_PREFS = { voice: 'bm_george', speed: 1, wpm: 140, theme: 'system', notesSize: 19, tourDone: false, filmstrip: false, notesOpen: true, readHint: 0 };
 const App = {
   decks: new Map(),       // id -> deck
   versions: new Map(),    // id -> version (with slides)
@@ -889,9 +889,10 @@ async function planDownloads() {
   }
 }
 
-/* ---------- the pill at the corner ---------- */
+/* ---------- the sync dot in the header ---------- */
+function syncPill() { if (!App.pillEl) App.pillEl = document.getElementById('sync-pill'); return App.pillEl; }
 function updatePill() {
-  const p = $('#sync-pill'); if (!p) return;
+  const p = syncPill(); if (!p) return;
   let txt, cls = '';
   const q = App.queue.length, dirty = Object.keys(App.sync.dirty).length;
   if (!syncReady()) { txt = 'This device only'; cls = 'off'; }
@@ -903,8 +904,8 @@ function updatePill() {
   else if (q) { txt = `${q} waiting for Drive`; cls = 'warn'; }
   else if (dirty) { txt = 'Saving…'; cls = 'busy'; }
   else { txt = 'Synced with Drive'; cls = 'ok'; }
-  p.className = 'pill ' + cls; p.querySelector('span').textContent = txt;
-  p.title = Sync.yielded ? 'Lectern is open in another tab. Click to reload this one.' : syncReady() ? (App.sync.lastSync ? 'Last synced ' + new Date(App.sync.lastSync).toLocaleTimeString() : 'Not synced yet') + '. Click to sync now.' : 'Set up Drive sync so your talks reach your other devices.';
+  p.className = 'pill ' + cls; p.querySelector('span').textContent = txt; p.setAttribute('aria-label', txt);
+  p.title = txt + '. ' + (Sync.yielded ? 'Lectern is open in another tab. Click to reload this one.' : syncReady() ? (App.sync.lastSync ? 'Last synced ' + new Date(App.sync.lastSync).toLocaleTimeString() : 'Not synced yet') + '. Click to sync now.' : 'Set up Drive sync so your talks reach your other devices.');
 }
 
 /* ---------- connecting a device ---------- */
@@ -1334,60 +1335,80 @@ function seriesGroups() {
   return [...groups.entries()].sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1) || a[0].localeCompare(b[0]));
 }
 function appendixOf(d) { return liveDecks().find(x => x.mainId === d.id); }
-function deckCard(d) {
-  const v = deckVer(d);
-  const mins = talkMinutes(d), ap = appendixOf(d);
-  const resume = d.pos && d.pos.n > 1 && v && d.pos.n <= v.slides.length;
-  const card = h('article', { class: 'card', tabindex: '0', onclick: () => go(`#/d/${d.id}/${resume ? d.pos.n : 1}`), onkeydown: e => { if (e.key === 'Enter') go(`#/d/${d.id}/${resume ? d.pos.n : 1}`); } },
-    v ? slideImage(v, 1, false, 'cover') : h('div', { class: 'pic cover textpic' }),
-    h('div', { class: 'cbody' },
-      h('h3', { text: d.title }),
-      h('p', { class: 'meta' }, v ? `${plural(v.slides.length, 'slide')}${mins ? ', ' + fmtMin(mins) : ''}` : 'No slides', ap ? ', with appendix' : '', resume ? h('span', { class: 'resume', text: `Resume at ${d.pos.n}` }) : null),
-      railHtml(d, true),
-      h('p', { class: 'cnext', text: pipeline(d).next.text })));
-  return card;
+/* one word for where a talk stands; the full pipeline lives in How it works and the talk's status */
+function statusWord(d) {
+  const v = deckVer(d), p = d.prep || {}, t = d.think, days = daysTo(d.date);
+  if (!v && t) return t.stage === 'building' ? ['Building', 'part'] : ['Thinking', 'part'];
+  if (!v) return ['No slides', ''];
+  if (draftCount(d)) return ['Unsaved', 'warn'];
+  if (v.picsState === 'failed') return ['Needs PDF', 'warn'];
+  if (p.presented) return ['Given', 'done'];
+  if (!p.timed) return ['Rehearse', ''];
+  if (openRequests(d)) return ['Flagged', 'warn'];
+  if (!p.printed && (days === null || days <= 14)) return ['Rehearse', ''];
+  if (days !== null && days < 0) return ['Given?', 'warn'];
+  return ['Ready', 'done'];
+}
+function statusTag(d, tag) { const [w, c] = statusWord(d); return h(tag || 'span', { class: 'st' + (c ? ' st-' + c : ''), title: pipeline(d).next.text, text: w }); }
+function openAt(d) { const v = deckVer(d); return d.pos && v && d.pos.n > 1 && d.pos.n <= v.slides.length ? d.pos.n : 1; }
+function whenText(d) {
+  const days = daysTo(d.date);
+  if (days === null) return '';
+  if (days === 0) return 'Today'; if (days === 1) return 'Tomorrow';
+  return fmtDate(d.date);
+}
+function talkRow(d) {
+  const v = deckVer(d), mins = talkMinutes(d);
+  return h('a', { class: 'trow', href: `#/d/${d.id}/${openAt(d)}` },
+    h('span', { class: 'tthumb' }, v ? slideImage(v, 1, false) : h('div', { class: 'pic textpic' })),
+    h('span', { class: 'ttitle', text: d.title }),
+    h('span', { class: 'tmeta', text: v ? `${plural(v.slides.length, 'slide')}${mins ? ', ' + fmtMin(mins) : ''}` : mins ? fmtMin(mins) : '' }),
+    h('span', { class: 'tdate', text: (d.prep || {}).presented ? '' : whenText(d) }),
+    statusTag(d));
+}
+function upNext() {
+  const decks = liveDecks().filter(d => d.role !== 'appendix');
+  const upcoming = decks.filter(d => d.date && daysTo(d.date) >= 0 && !(d.prep || {}).presented).sort((a, b) => a.date.localeCompare(b.date))[0];
+  const recent = decks.filter(d => d.pos && d.pos.at && Date.now() - new Date(d.pos.at) < 21 * 86400000).sort((a, b) => String(b.pos.at).localeCompare(a.pos.at))[0];
+  const d = upcoming || recent;
+  if (!d) return null;
+  const days = upcoming ? daysTo(d.date) : null, nx = pipeline(d).next;
+  const when = upcoming ? (days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`) : 'Last opened';
+  return h('section', { class: 'upnext', 'aria-label': 'Up next' },
+    h('p', { class: 'unk' }, h('b', { text: 'Up next' }), h('span', { text: when })),
+    h('a', { class: 'untitle', href: `#/d/${d.id}/${openAt(d)}`, text: d.title }),
+    nx.label ? btn(nx.label, { primary: true, title: nx.text, onclick: nx.fn }) : btn(openAt(d) > 1 ? `Open at slide ${openAt(d)}` : 'Open', { primary: true, title: nx.text, onclick: () => go(`#/d/${d.id}/${openAt(d)}`) }));
 }
 function renderLibrary() {
   const main = $('#main');
-  const decks = liveDecks();
   const head = h('header', { class: 'libhead' },
-    h('div', { class: 'brandrow' }, h('h1', { class: 'brand' }, 'Lectern'), h('p', { class: 'tag', text: 'Your talks, from the first idea to the podium.' }),
-      h('div', { class: 'headbtns' }, btn('How it works', { icon: 'help', quiet: true, onclick: () => openHelp() }), btn('Settings', { icon: 'gear', quiet: true, iconOnly: true, onclick: () => openSettings() }))),
-    h('div', { class: 'searchrow' },
-      h('label', { class: 'search' }, icon('search'), h('input', { id: 'libq', type: 'search', placeholder: 'Search every slide and note', value: Lib.q, autocomplete: 'off', spellcheck: 'false',
-        oninput: debounce(e => { Lib.q = e.target.value; renderLibraryBody(); }, 120), onkeydown: e => { if (e.key === 'Enter') { const f = $('.hit'); if (f) f.click(); } } }), h('kbd', { text: '/' })),
-      btn('Add a talk', { icon: 'plus', primary: true, onclick: () => pickFiles('.pptx,.pdf') })));
+    h('h1', { class: 'brand' }, 'Lectern'),
+    h('label', { class: 'search' }, icon('search'), h('input', { id: 'libq', type: 'search', placeholder: 'Search every slide and note', 'aria-label': 'Search every slide and note', value: Lib.q, autocomplete: 'off', spellcheck: 'false',
+      oninput: debounce(e => { Lib.q = e.target.value; renderLibraryBody(); }, 120), onkeydown: e => { if (e.key === 'Enter') { const f = $('.hit') || $('.results .trow'); if (f) f.click(); } } }), h('kbd', { text: '/' })),
+    h('div', { class: 'headbtns' },
+      btn('Add a talk', { icon: 'plus', quiet: true, title: 'Add a PowerPoint or PDF (or drop it anywhere)', onclick: () => pickFiles('.pptx,.pdf') }),
+      btn('How it works', { icon: 'help', iconOnly: true, quiet: true, title: 'How it works (?)', onclick: () => openHelp() }),
+      btn('Settings', { icon: 'gear', iconOnly: true, quiet: true, title: 'Settings', onclick: () => openSettings() }),
+      syncPill()));
   main.replaceChildren(head, h('div', { id: 'libbody' }));
   renderLibraryBody();
-  if (!decks.length) return;
 }
 function renderLibraryBody() {
   const body = $('#libbody'); if (!body) return;
   const decks = liveDecks();
   if (Lib.q.trim()) { body.replaceChildren(searchResults(Lib.q.trim())); return; }
   if (!decks.length) { body.replaceChildren(emptyLibrary()); return; }
-  const out = [];
-  const recent = decks.filter(d => d.pos && d.pos.at).sort((a, b) => String(b.pos.at).localeCompare(a.pos.at))[0];
-  const upcoming = decks.filter(d => d.date && daysTo(d.date) >= 0 && !(d.prep || {}).presented).sort((a, b) => a.date.localeCompare(b.date))[0];
-  const focus = upcoming || recent;
-  if (focus) {
-    const v = deckVer(focus);
-    out.push(h('section', { class: 'focus' }, h('div', { class: 'ftext' },
-      h('p', { class: 'fk', text: upcoming ? (daysTo(focus.date) === 0 ? 'Talk today' : `Next talk, in ${plural(daysTo(focus.date), 'day')}`) : 'Carry on where you left off' }),
-      h('h2', { text: focus.title }),
-      railHtml(focus, false), nextHtml(focus, false),
-      h('div', { class: 'factions' }, btn(focus.pos && focus.pos.n > 1 ? `Open at slide ${focus.pos.n}` : 'Open', { primary: false, onclick: () => go(`#/d/${focus.id}/${focus.pos && focus.pos.n || 1}`) }))),
-      v ? h('div', { class: 'fpic', onclick: () => go(`#/d/${focus.id}/${focus.pos && focus.pos.n || 1}`) }, slideImage(v, Math.min(v.slides.length, focus.pos && focus.pos.n || 1), true)) : null));
-  }
-  for (const [series, list] of seriesGroups()) {
+  const out = [upNext()];
+  const groups = seriesGroups();
+  for (const [series, list] of groups) {
     const k = series || '_';
     const coll = !!Lib.collapsed[k];
     out.push(h('section', { class: 'group' },
       h('button', { type: 'button', class: 'ghead', 'aria-expanded': String(!coll), onclick: () => { Lib.collapsed[k] = !coll; renderLibraryBody(); } },
-        h('h2', { text: series || (seriesGroups().length > 1 ? 'Other talks' : 'Talks') }), h('span', { class: 'gcount', text: plural(list.length, 'talk') })),
-      coll ? null : h('div', { class: 'cards' }, list.map(deckCard))));
+        h('h2', { text: series || (groups.length > 1 ? 'Other talks' : 'Talks') }), h('span', { class: 'gcount', text: list.length })),
+      coll ? null : h('div', { class: 'tlist' }, list.map(talkRow))));
   }
-  body.replaceChildren(...out);
+  body.replaceChildren(...out.filter(Boolean));
 }
 function emptyLibrary() {
   return h('section', { class: 'empty' },
@@ -1426,7 +1447,7 @@ function searchResults(q) {
   }
   const wrap = h('section', { class: 'results' });
   if (!talks.length && !hits.length) { wrap.append(h('p', { class: 'none', text: `Nothing matches “${q}”. Try fewer words.` })); return wrap; }
-  if (talks.length) wrap.append(h('h2', { text: plural(talks.length, 'talk') }), h('div', { class: 'cards' }, talks.map(deckCard)));
+  if (talks.length) wrap.append(h('h2', { text: plural(talks.length, 'talk') }), h('div', { class: 'tlist' }, talks.map(talkRow)));
   if (hits.length) wrap.append(h('h2', { text: `${hits.length > 120 ? '120+' : hits.length} slides` }), h('div', { class: 'hits' }, hits.map(x =>
     h('button', { type: 'button', class: 'hit', onclick: () => go(`#/d/${x.d.id}/${x.s.n}`) },
       slideImage(x.v, x.s.n, false), h('div', { class: 'htext' }, h('p', { class: 'hk' }, h('span', { text: x.d.title }), ` slide ${x.s.n}`, x.where === 'notes' ? h('i', { text: ' in notes' }) : null),
@@ -1467,19 +1488,27 @@ function renderDeck(id, n, mode) {
   if (!changedDeck && $('#main .deck')) { showSlide(Deck.n); return; }
   Deck.editing = false; Deck.grid = false;
   const main = $('#main');
-  const series = d.series ? h('span', { class: 'crumb', text: d.series }) : null;
   const head = h('header', { class: 'dhead' },
-    h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' }, h('a', { href: '#/', class: 'crumb home' }, icon('back'), 'Lectern'), series ? h('i', { class: 'sep', text: '›' }) : null, series,
-      h('i', { class: 'sep', text: '›' }), h('button', { type: 'button', class: 'dtitle', title: 'Rename', onclick: () => renameDeck(d) }, d.title)),
-    v ? h('div', { class: 'tabs', role: 'tablist' }, MODES.map(([m, label, key]) => h('button', { type: 'button', role: 'tab', class: 'tab' + (Deck.mode === m ? ' on' : ''), 'aria-selected': String(Deck.mode === m), title: `${label} (${key})`, onclick: () => setMode(m) }, label, h('kbd', { text: key })))) : h('div', { class: 'tabs' }),
-    h('div', { class: 'dtools' }, btn('Help', { icon: 'help', iconOnly: true, quiet: true, onclick: () => openHelp() }), btn('More', { icon: 'dots', iconOnly: true, quiet: true, onclick: e => deckMenu(d, e.currentTarget) })));
-  const wrap = h('div', { class: 'deck mode-' + Deck.mode }, head, h('div', { class: 'railrow' }, railHtml(d, false), nextHtml(d, false)));
+    h('div', { class: 'dleft' }, h('a', { href: '#/', class: 'home', title: 'All talks' }, icon('back'), h('span', { text: 'Lectern' })),
+      h('h1', { class: 'dtitle', title: d.series ? `${d.title}\n${d.series}` : d.title, text: d.title }), statusChip(d)),
+    v ? h('div', { class: 'tabs', role: 'tablist' }, MODES.map(([m, label, key]) => h('button', { type: 'button', role: 'tab', class: 'tab' + (Deck.mode === m ? ' on' : ''), 'aria-selected': String(Deck.mode === m), title: `${label} (${key})`, onclick: () => setMode(m) }, label))) : h('div', { class: 'tabs empty' }),
+    h('div', { class: 'dtools' }, btn('How it works', { icon: 'help', iconOnly: true, quiet: true, title: 'How it works (?)', onclick: () => openHelp() }), btn('More', { icon: 'dots', iconOnly: true, quiet: true, title: 'Talk details, versions, download…', onclick: e => deckMenu(d, e.currentTarget) }), syncPill()));
+  const wrap = h('div', { class: 'deck mode-' + Deck.mode }, head);
   if (Deck.mode === 'think') wrap.append(thinkView(d));
   else if (Deck.mode === 'present') wrap.append(presentStart(d));
   else wrap.append(workArea());
   main.replaceChildren(wrap);
   if (v && Deck.mode !== 'present' && Deck.mode !== 'think') showSlide(Deck.n, true);
   renderEditBar();
+}
+function statusChip(d) {
+  const [w, c] = statusWord(d);
+  return h('button', { type: 'button', class: 'st chip' + (c ? ' st-' + c : ''), title: 'Next: ' + pipeline(d).next.text + '\nClick to see every step.', onclick: () => openStatus(d) }, h('i'), w);
+}
+function openStatus(d) {
+  const body = h('div', { class: 'status' }, railHtml(d, false), nextHtml(d, false));
+  body.addEventListener('click', e => { if (e.target.closest('button')) closeModal(); }, true);
+  modal({ title: `Where “${d.title}” stands`, wide: true, body });
 }
 function setMode(m) { if (!Deck.d) return; if (Deck.mode === 'rehearse' && Run.active && m !== 'rehearse') { toast('Finish or stop the timed run first.'); return; } go(`#/d/${Deck.d.id}/${Deck.n}/${m}`); }
 
@@ -1495,14 +1524,16 @@ function workArea() {
   const under = h('div', { class: 'underbar' },
     h('div', { class: 'counter', id: 'counter' }),
     h('div', { class: 'acts' },
-      btn('Edit notes', { icon: 'edit', key: 'E', cls: 'act-edit', onclick: () => startEdit() }),
-      btn('Change this slide', { icon: 'flag', key: 'C', cls: 'act-flag', onclick: () => flagSlide() }),
-      btn('Read aloud', { icon: 'speaker', key: 'L', cls: 'act-read', onclick: () => Voice.toggleSlide(Deck.d, Deck.n) })),
+      btn('Edit notes', { icon: 'edit', key: 'E', quiet: true, cls: 'act-edit', onclick: () => startEdit() }),
+      btn('Flag for Claude', { icon: 'flag', key: 'C', quiet: true, cls: 'act-flag', title: 'Flag this slide for Claude to change (C)', onclick: () => flagSlide() }),
+      btn('Read aloud', { icon: 'speaker', key: 'L', quiet: true, cls: 'act-read', onclick: () => Voice.toggleSlide(Deck.d, Deck.n) })),
+    Deck.mode === 'rehearse' ? rehearseCtl() : null,
     h('div', { class: 'views' },
       btn('All slides', { icon: 'grid', iconOnly: true, quiet: true, title: 'All slides (G)', onclick: () => toggleGrid() }),
-      btn('Filmstrip', { icon: 'film', iconOnly: true, quiet: true, title: 'Filmstrip (T)', onclick: () => toggleFilm() }),
-      btn('Script', { icon: 'notes', iconOnly: true, quiet: true, title: 'Script panel (N)', onclick: () => toggleNotes() })));
-  const left = h('section', { class: 'stagecol' }, Deck.mode === 'rehearse' ? rehearseBar() : null, stage, under, film);
+      btn('Filmstrip', { icon: 'film', iconOnly: true, quiet: true, cls: 'v-film' + (App.prefs.filmstrip ? ' on' : ''), title: 'Filmstrip (T)', onclick: () => toggleFilm() }),
+      btn('Notes panel', { icon: 'notes', iconOnly: true, quiet: true, cls: 'v-notes' + (App.prefs.notesOpen ? ' on' : ''), title: 'Notes panel (N)', onclick: () => toggleNotes() })));
+  if (Deck.mode === 'rehearse') stage.append(h('div', { class: 'hud', id: 'hud', 'aria-live': 'off' }));
+  const left = h('section', { class: 'stagecol' }, stage, film, under);
   const script = h('aside', { class: 'script', id: 'script', hidden: !App.prefs.notesOpen });
   return h('div', { class: 'work' }, left, script);
 }
@@ -1522,7 +1553,7 @@ function showSlide(n, first) {
   const box = $('#slidebox'); if (!box) return;
   box.replaceChildren(slideImage(v, n, true, 'main'));
   const flags = slideFlags(d, n);
-  $('#counter').replaceChildren(...[h('b', { text: `${n}` }), h('span', { class: 'of', text: `/ ${v.slides.length}` }), h('span', { class: 'ct', text: s.title }),
+  $('#counter').replaceChildren(...[h('b', { text: `${n}` }), h('span', { class: 'of', text: `/ ${v.slides.length}` }),
     s.hidden ? h('span', { class: 'tagpill', text: 'hidden slide' }) : null,
     flags.length ? h('button', { type: 'button', class: 'tagpill flagged', title: flags.map(f => f.text).join('\n'), onclick: () => openImprove(d) }, icon('flag'), plural(flags.length, 'flag')) : null,
     draftFor(d) && draftFor(d).edits[n] !== undefined ? h('span', { class: 'tagpill edited', text: 'notes edited' }) : null].filter(Boolean));
@@ -1546,7 +1577,7 @@ function renderScript() {
   const text = noteText(d, n), words = wordsOf(text);
   const tgt = slideTargets(d)[n - 1] || 0;
   const head = h('div', { class: 'shead' },
-    h('h2', {}, 'Script', h('span', { class: 'smeta', text: words ? `${words} words, about ${fmtClock(words / App.prefs.wpm * 60000)}${tgt ? `; target ${fmtClock(tgt)}` : ''}` : 'No notes on this slide' })),
+    h('h2', {}, 'Notes', h('span', { class: 'smeta', text: words ? `${words} words, about ${fmtClock(words / App.prefs.wpm * 60000)}${tgt ? `; target ${fmtClock(tgt)}` : ''}` : 'No notes on this slide' })),
     h('div', { class: 'sctl' },
       btn('Smaller text', { iconOnly: true, quiet: true, cls: 'tsz', onclick: () => textSize(-1) }), h('span', { class: 'tsl', text: 'A' }), btn('Larger text', { iconOnly: true, quiet: true, cls: 'tsz up', onclick: () => textSize(1) })));
   let body;
@@ -1589,7 +1620,7 @@ function cueCards(text) {
 function textSize(dir) { App.prefs.notesSize = clamp(App.prefs.notesSize + dir * 2, 13, 34); saveKV('prefs'); renderScript(); }
 function startEdit() {
   if (!Deck.v) return;
-  if (!App.prefs.notesOpen) { App.prefs.notesOpen = true; const s = $('#script'); if (s) s.hidden = false; }
+  if (!App.prefs.notesOpen) toggleNotes();
   if (Voice.busy) Voice.stop();
   Deck.editing = true; renderScript();
 }
@@ -1632,8 +1663,8 @@ function flagSlide(n) {
 }
 
 /* ---------- views: filmstrip, notes panel, grid, full screen ---------- */
-function toggleFilm() { App.prefs.filmstrip = !App.prefs.filmstrip; saveKV('prefs'); const f = $('#film'); if (f) { f.hidden = !App.prefs.filmstrip; showSlide(Deck.n); } }
-function toggleNotes() { App.prefs.notesOpen = !App.prefs.notesOpen; saveKV('prefs'); const s = $('#script'); if (s) { s.hidden = !App.prefs.notesOpen; renderScript(); } }
+function toggleFilm() { App.prefs.filmstrip = !App.prefs.filmstrip; saveKV('prefs'); const f = $('#film'); if (f) { f.hidden = !App.prefs.filmstrip; showSlide(Deck.n); } const b = $('.v-film'); if (b) b.classList.toggle('on', App.prefs.filmstrip); }
+function toggleNotes() { App.prefs.notesOpen = !App.prefs.notesOpen; saveKV('prefs'); const s = $('#script'); if (s) { s.hidden = !App.prefs.notesOpen; renderScript(); } const b = $('.v-notes'); if (b) b.classList.toggle('on', App.prefs.notesOpen); }
 function toggleGrid() { Deck.grid = !Deck.grid; renderGrid(); }
 function renderGrid() {
   let g = $('#grid');
@@ -1696,15 +1727,19 @@ function deckMenu(d, anchor) {
     deckVer(d) ? ['Download the .pptx', () => downloadOriginal(d)] : null,
     deckVer(d) ? ['Use exact pictures from a PDF…', () => pickFiles('.pdf', d.id)] : null,
     deckVer(d) && syncReady() && deckVer(d).picsSrc !== 'pdf' ? ['Ask Google to redraw the pictures', () => { const v = deckVer(d); v.picsState = 'waiting'; v.picsSrc = ''; saveVersion(v); enqueue({ t: 'google', verId: v.id }); toast('Redrawing in the background.'); }] : null,
+    appendixOf(d) ? ['Open the appendix', () => go(`#/d/${appendixOf(d).id}/1`)] : null,
+    d.role === 'appendix' && d.mainId && App.decks.get(d.mainId) && !App.decks.get(d.mainId).deletedAt ? ['Back to the main talk', () => go(`#/d/${d.mainId}/${openAt(App.decks.get(d.mainId))}`)] : null,
+    ['Where this talk stands', () => openStatus(d)],
     ['Claude’s list for this talk', () => openImprove(d)],
     ['Move to deleted talks', () => deleteDeck(d)],
   ].filter(Boolean);
   popMenu(anchor, items);
 }
-function popMenu(anchor, items) {
+function popMenu(anchor, items, up) {
   closeMenus();
   const r = anchor.getBoundingClientRect();
-  const m = h('div', { class: 'menu', role: 'menu', style: { top: (r.bottom + 6) + 'px', right: Math.max(8, innerWidth - r.right) + 'px' } },
+  up = up || r.bottom > innerHeight * 0.6;   // near the bottom of the window: open upwards
+  const m = h('div', { class: 'menu', role: 'menu', style: Object.assign(up ? { bottom: (innerHeight - r.top + 6) + 'px' } : { top: (r.bottom + 6) + 'px' }, { right: Math.max(8, innerWidth - r.right) + 'px' }) },
     items.map(([label, fn]) => h('button', { type: 'button', role: 'menuitem', onclick: () => { closeMenus(); fn(); } }, label)));
   document.body.append(m);
   setTimeout(() => document.addEventListener('click', closeMenus, { once: true }), 0);
@@ -1779,30 +1814,27 @@ function thinkView(d) {
 }
 /* ============ Rehearse: timed runs, cue cards, recording yourself, listening ============ */
 const Run = { active: false, paused: false, cue: false, rec: false, deckId: '', startAt: 0, pausedAt: 0, pausedMs: 0, segs: [], slideStart: 0, n: 0, recorder: null, chunks: [], tick: 0 };
-function rehearseBar() {
+function rehearseCtl() {
   const d = Deck.d;
   const hasMp3 = !!(d.prep && d.prep.mp3);
-  return h('div', { class: 'rbar', id: 'rbar' },
-    h('div', { class: 'rmain' },
-      Run.active ? null : btn('Start timed run', { primary: true, icon: 'clock', key: 'S', onclick: () => startRun(d) }),
-      Run.active ? btn(Run.paused ? 'Resume' : 'Pause', { icon: Run.paused ? 'play' : 'pause', onclick: () => Run.paused ? Run.resume() : Run.pause() }) : null,
-      Run.active ? btn('Finish run', { icon: 'stop', onclick: () => finishRun() }) : null,
-      h('div', { class: 'hud', id: 'hud' })),
-    h('div', { class: 'ropts' },
-      Run.cue ? toggleBtn('Cue cards', true, 'cards', 'Showing only the first and last line of each slide', () => { Run.cue = false; renderDeckBar(); renderScript(); }) : null,
-      Run.rec ? toggleBtn('Record me', true, 'mic', 'Your voice is recorded during the next timed run', () => { Run.rec = false; renderDeckBar(); }) : null,
-      btn('Print notes', { icon: 'print', onclick: () => go(`#/print/${d.id}`) }),
-      btn('Past runs', { icon: 'clock', quiet: true, onclick: () => openRuns(d) }),
-      btn('More', { icon: 'dots', quiet: true, onclick: e => popMenu(e.currentTarget, [
-        ['Practise likely questions', () => practiseQuestions(d)],
-        ['Read my notes aloud from here (turns the slides)', () => Voice.playOn(Deck.d, Deck.n)],
-        ['Read this slide aloud  (L)', () => Voice.toggleSlide(Deck.d, Deck.n)],
-        [hasMp3 ? 'Play the talk MP3' : 'Make the talk MP3, for the car', () => hasMp3 ? openMp3(d) : makeTalkMp3(d)],
-        [Run.cue ? 'Cue cards off' : 'Cue cards: only first and last lines', () => { Run.cue = !Run.cue; renderDeckBar(); renderScript(); }],
-        [Run.rec ? 'Don’t record me' : 'Record me during the next timed run', () => { if (Run.active) { toast('Recording starts with a timed run.'); return; } Run.rec = !Run.rec; renderDeckBar(); }]]) })));
+  const more = () => [
+    ['Print podium notes', () => go(`#/print/${d.id}`)],
+    ['Past timed runs', () => openRuns(d)],
+    ['Practise likely questions', () => practiseQuestions(d)],
+    ['Read this slide aloud  (L)', () => Voice.toggleSlide(Deck.d, Deck.n)],
+    ['Listen from here (reads the notes, turns the slides)', () => Voice.playOn(Deck.d, Deck.n)],
+    [hasMp3 ? 'Play the talk MP3' : 'Make the talk MP3, for the car', () => hasMp3 ? openMp3(d) : makeTalkMp3(d)],
+    [Run.cue ? 'Cue cards off' : 'Cue cards: only first and last lines', () => { Run.cue = !Run.cue; renderDeckBar(); renderScript(); }],
+    [Run.rec ? 'Don’t record me' : 'Record me during the next timed run', () => { if (Run.active) { toast('Recording starts with a timed run.'); return; } Run.rec = !Run.rec; renderDeckBar(); }]];
+  return h('div', { class: 'rctl', id: 'rctl' },
+    Run.cue ? toggleBtn('Cue cards', true, 'cards', 'Showing only the first and last line of each slide. Click to turn off.', () => { Run.cue = false; renderDeckBar(); renderScript(); }) : null,
+    Run.rec ? toggleBtn('Record me', true, 'mic', 'Your voice is recorded during the next timed run. Click to turn off.', () => { Run.rec = false; renderDeckBar(); }) : null,
+    Run.active ? btn(Run.paused ? 'Resume' : 'Pause', { icon: Run.paused ? 'play' : 'pause', onclick: () => Run.paused ? Run.resume() : Run.pause() }) : null,
+    Run.active ? btn('Finish run', { icon: 'stop', primary: true, key: 'S', onclick: () => finishRun() }) : btn('Start timed run', { primary: true, icon: 'clock', key: 'S', onclick: () => startRun(d) }),
+    Run.active ? null : btn('More', { quiet: true, cls: 'rmore', title: 'Print notes, past runs, questions, MP3, cue cards, recording', onclick: e => popMenu(e.currentTarget, more(), true) }));
 }
-function toggleBtn(label, on, ic, title, fn) { return h('button', { type: 'button', class: 'btn quiet tog' + (on ? ' on' : ''), 'aria-pressed': String(!!on), title, onclick: fn }, icon(ic), h('span', { text: label })); }
-function renderDeckBar() { const b = $('#rbar'); if (b) b.replaceWith(rehearseBar()); Run.render(); }
+function toggleBtn(label, on, ic, title, fn) { return h('button', { type: 'button', class: 'btn quiet tog' + (on ? ' on' : ''), 'aria-pressed': String(!!on), 'aria-label': label, title: label + ': ' + title, onclick: fn }, icon(ic), h('span', { class: 'tl', text: label })); }
+function renderDeckBar() { const b = $('#rctl'); if (b) b.replaceWith(rehearseCtl()); Run.render(); }
 
 function runElapsed() { return Run.active ? ((Run.paused ? Run.pausedAt : Date.now()) - Run.startAt - Run.pausedMs) : 0; }
 function slideElapsed() { return Run.active ? ((Run.paused ? Run.pausedAt : Date.now()) - Run.slideStart) : 0; }
@@ -2183,7 +2215,7 @@ function renderSpeaker(id, n) {
   const wrap = h('div', { class: 'speaker' },
     h('div', { class: 'spmain' }, h('div', { class: 'spcur', id: 'spcur' }), h('div', { class: 'spbar' },
       btn('Previous', { icon: 'prev', iconOnly: true, onclick: () => speakerGo(Deck.n - 1) }), h('div', { class: 'spn', id: 'spn' }), btn('Next', { icon: 'next', iconOnly: true, onclick: () => speakerGo(Deck.n + 1) }),
-      btn('Blank the projector', { icon: 'black', key: 'B', quiet: true, cls: 'spblack', onclick: () => speakerBlack() }), btn('Change this slide', { icon: 'flag', key: 'C', quiet: true, onclick: () => flagSlide() }),
+      btn('Blank the projector', { icon: 'black', key: 'B', quiet: true, cls: 'spblack', onclick: () => speakerBlack() }), btn('Flag for Claude', { icon: 'flag', key: 'C', quiet: true, onclick: () => flagSlide() }),
       btn('End', { icon: 'close', quiet: true, onclick: () => endShow(d) }))),
     h('div', { class: 'spside' }, h('div', { class: 'spclock', id: 'spclock' }), h('div', { class: 'spnext', id: 'spnext' }), h('div', { class: 'spnotes', id: 'spnotes', style: { fontSize: (App.prefs.notesSize + 3) + 'px' } })));
   $('#main').replaceChildren(wrap);
@@ -2322,7 +2354,7 @@ function rerender() {
     Deck.d = null; renderDeck(d.id, Deck.n, keep);
   } else if (r.name === 'library' || !r.name) renderLibraryBody();
 }
-function rerenderRail() { const r = $('.railrow'); if (r && Deck.d) r.replaceChildren(railHtml(Deck.d, false), nextHtml(Deck.d, false)); }
+function rerenderRail() { const r = $('.dhead .st'); if (r && Deck.d) r.replaceWith(statusChip(Deck.d)); }
 
 /* ============ keyboard ============ */
 const typing = e => { const t = e.target; return t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); };
@@ -2383,7 +2415,7 @@ function onKey(e) {
 /* ============ help, shortcuts, where things live ============ */
 function openHelp() {
   const keys = [['← →  Space', 'Previous / next slide'], ['12 then Enter', 'Go to slide 12'], ['E', 'Edit the notes of this slide'], ['C', 'Flag this slide for Claude to change'], ['J', 'Jot an idea for a talk'],
-    ['L', 'Read this slide’s notes aloud'], ['V  R  P', 'Review, Rehearse, Present'], ['S', 'Start or finish a timed run (Rehearse)'], ['G', 'All slides'], ['T  N', 'Filmstrip, script panel'],
+    ['L', 'Read this slide’s notes aloud'], ['V  R  P', 'Review, Rehearse, Present'], ['S', 'Start or finish a timed run (Rehearse)'], ['G', 'All slides'], ['T  N', 'Filmstrip, notes panel'],
     ['F', 'Full screen'], ['B', 'Blank the projector (presenting)'], ['/', 'Search (library)'], ['Ctrl+K', 'Find any action'], ['?', 'This help']];
   modal({ title: 'How Lectern works', wide: true, body: h('div', { class: 'help' }, howItWorks(),
     h('h3', { text: 'Keys' }), h('dl', { class: 'keys' }, keys.map(([k, d]) => [h('dt', {}, h('kbd', { text: k })), h('dd', { text: d })])),
@@ -2603,6 +2635,7 @@ async function init() {
   await DB.open();
   const kv = await DB.all('kv');
   Object.assign(App.prefs, kv.get('prefs') || {});
+  if (!App.prefs.ui2) { App.prefs.filmstrip = false; App.prefs.ui2 = true; saveKV('prefs'); }   // the tidier layout: filmstrip only when wanted
   applyTheme();
   Object.assign(App.sync, kv.get('sync') || {});
   App.queue = kv.get('queue') || [];
@@ -2618,7 +2651,7 @@ async function init() {
   window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) document.body.classList.remove('dragging'); });
   window.addEventListener('dragover', e => { if ([...(e.dataTransfer.types || [])].includes('Files')) e.preventDefault(); });
   window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files, Deck.d && App.ui.route && App.ui.route.name === 'd' ? Deck.d.id : null); });
-  $('#sync-pill').addEventListener('click', () => Sync.yielded ? location.reload() : syncReady() ? syncNow(true) : openSettings('sync'));
+  syncPill().addEventListener('click', () => Sync.yielded ? location.reload() : syncReady() ? syncNow(true) : openSettings('sync'));
   const setup = /^#sync=/.test(location.hash) ? readSetupHash() : null;
   const isScreen = /^#\/screen\//.test(location.hash);
   route();
